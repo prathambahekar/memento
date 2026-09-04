@@ -1,4 +1,4 @@
-import { Search, Plus, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { NavTab, ThemeMode } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 
@@ -19,7 +19,6 @@ export function TopBar({
   searchQuery = '',
   onSearchChange,
   onOpenSearch,
-  onOpenNewNote,
 }: TopBarProps) {
   const isDark = theme === 'dark';
 
@@ -37,7 +36,7 @@ export function TopBar({
   const currentTitle = sectionTitles[activeTab] || 'Notes';
 
   return (
-    <header className="relative w-full z-20 px-5 md:px-8 pt-[max(1rem,env(safe-area-inset-top))] md:pt-6 pb-3 md:pb-4 flex items-center justify-between transition-colors">
+    <header className="shrink-0 relative w-full z-20 px-5 md:px-8 pt-[max(1rem,env(safe-area-inset-top))] md:pt-6 pb-3 md:pb-4 flex items-center justify-between transition-colors">
       {/* Left side: Mobile brand title or Desktop section title */}
       <div className="flex items-center gap-3">
         {/* Mobile brand title */}
@@ -61,65 +60,64 @@ export function TopBar({
         </div>
       </div>
 
-      {/* Right side controls */}
-      <div className="flex items-center gap-3">
-        {/* Clean Desktop Search Bar (no ⌘K button) */}
+      {/* Center: Desktop Centered Bigger Search Bar */}
+      <div className="hidden md:flex md:absolute md:left-1/2 md:-translate-x-1/2 items-center pointer-events-auto">
         <div
-          className={`hidden md:flex items-center gap-2.5 px-3.5 py-2 rounded-full w-64 lg:w-80 transition-all duration-200 group ${
+          className={`flex items-center gap-3 px-4 md:px-5 h-11 md:h-12 rounded-full w-80 md:w-[26rem] lg:w-[32rem] xl:w-[38rem] transition-all duration-200 group border shadow-xs ${
             isDark
-              ? 'bg-[#151515] hover:bg-[#1a1a1a] focus-within:bg-[#171717] focus-within:ring-1 focus-within:ring-neutral-700/70'
-              : 'bg-[#eeeff2] hover:bg-[#e6e8ed] focus-within:bg-white focus-within:ring-1 focus-within:ring-neutral-300 shadow-xs'
+              ? 'bg-[#151515] hover:bg-[#1a1a1a] border-neutral-800/80 focus-within:border-neutral-600 focus-within:bg-[#181818] focus-within:ring-2 focus-within:ring-white/5'
+              : 'bg-[#eeeff2] hover:bg-[#e6e8ed] border-neutral-200/70 focus-within:border-neutral-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-black/5'
           }`}
         >
           <Search
-            className={`w-4 h-4 shrink-0 transition-colors ${
+            className={`w-4.5 h-4.5 md:w-5 md:h-5 shrink-0 transition-colors ${
               isDark
-                ? 'text-neutral-500 group-focus-within:text-neutral-300'
-                : 'text-neutral-400 group-focus-within:text-neutral-700'
+                ? 'text-neutral-500 group-focus-within:text-neutral-200'
+                : 'text-neutral-400 group-focus-within:text-neutral-800'
             }`}
+            strokeWidth={2}
           />
           <input
             id="desktop-quick-search-input"
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange?.(e.target.value)}
-            placeholder="Search in notes..."
-            className={`w-full bg-transparent text-xs font-normal outline-none transition-colors ${
+            placeholder="Search notes, checklists, keys..."
+            className={`w-full bg-transparent text-sm md:text-[14.5px] font-normal outline-none transition-colors ${
               isDark
                 ? 'text-white placeholder-neutral-500'
                 : 'text-neutral-900 placeholder-neutral-400'
             }`}
           />
 
-          {searchQuery && (
+          {searchQuery ? (
             <button
               type="button"
               onClick={() => onSearchChange?.('')}
-              className={`p-0.5 rounded-full hover:opacity-80 transition-opacity ${
+              className={`p-1 rounded-full hover:opacity-80 transition-opacity shrink-0 ${
                 isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-500 hover:text-black'
               }`}
+              title="Clear search"
+              aria-label="Clear search"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
+          ) : (
+            <kbd
+              className={`hidden lg:inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-md border select-none shrink-0 ${
+                isDark
+                  ? 'border-neutral-700/60 bg-neutral-800/50 text-neutral-400'
+                  : 'border-neutral-300/80 bg-neutral-200/60 text-neutral-500'
+              }`}
+            >
+              ⌘K
+            </kbd>
           )}
         </div>
+      </div>
 
-        {/* Desktop Quick '+ Note' action */}
-        {onOpenNewNote && (
-          <button
-            type="button"
-            onClick={onOpenNewNote}
-            className={`hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold active:scale-95 transition-all shadow-xs ${
-              isDark
-                ? 'bg-white text-black hover:bg-neutral-200'
-                : 'bg-neutral-900 text-white hover:bg-black'
-            }`}
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Note</span>
-          </button>
-        )}
-
+      {/* Right side controls */}
+      <div className="flex items-center gap-3">
         {/* Mobile Search Button */}
         <button
           id="top-bar-search-btn"

@@ -17,13 +17,15 @@ import {
   Trash2,
   Sparkles,
 } from 'lucide-react';
-import { ThemeMode, EntryType, TodoSubItem } from '../types';
+import { ThemeMode, EntryType, TodoSubItem, NoteItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
+import { parseTodoItemsFromNote } from './TodoDrawer';
 
 interface NewNoteModalProps {
   isOpen: boolean;
   theme: ThemeMode;
   initialType?: EntryType;
+  editingNote?: NoteItem | null;
   onClose: () => void;
   onSaveNote: (
     title: string,
@@ -40,14 +42,17 @@ interface NewNoteModalProps {
       imageUrl?: string;
     }
   ) => void;
+  onUpdateNote?: (updatedNote: NoteItem) => void;
 }
 
 export function NewNoteModal({
   isOpen,
   theme,
   initialType = 'diary',
+  editingNote,
   onClose,
   onSaveNote,
+  onUpdateNote,
 }: NewNoteModalProps) {
   const isDark = theme === 'dark';
 
@@ -82,31 +87,83 @@ export function NewNoteModal({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
 
-  // Reset when opened
+  // Reset or initialize when opened
   useEffect(() => {
     if (isOpen) {
-      setTitle('');
-      setContent('');
-      setServiceName('');
-      setEmailUsername('');
-      setPasswordValue('');
-      setSecretNotes('');
-      setShowSecretNotes(false);
-      setShowPassword(false);
-      setTodoItems([]);
+      if (editingNote) {
+        const determinedType: EntryType =
+          editingNote.entryType ||
+          (editingNote.isTodo
+            ? 'todo'
+            : editingNote.isSafe || editingNote.isVault
+            ? 'passwords'
+            : 'diary');
+        setEntryType(determinedType);
+        setTitle(editingNote.title || '');
+        setContent(editingNote.content || '');
+        setServiceName(editingNote.service || editingNote.title || '');
+        setEmailUsername(editingNote.email || '');
+        setPasswordValue(editingNote.password || '');
+
+        let parsedSecretNotes = '';
+        if (editingNote.content && (determinedType === 'passwords' || editingNote.isSafe)) {
+          const lines = editingNote.content.split('\n');
+          for (const line of lines) {
+            if (!editingNote.email && line.startsWith('Email/Username: ')) {
+              setEmailUsername(line.replace('Email/Username: ', '').trim());
+            } else if (!editingNote.password && line.startsWith('Password: ')) {
+              setPasswordValue(line.replace('Password: ', '').trim());
+            } else if (line.startsWith('Notes: ')) {
+              const n = line.replace('Notes: ', '').trim();
+              parsedSecretNotes = parsedSecretNotes ? `${parsedSecretNotes}\n${n}` : n;
+            } else if (!line.startsWith('Email/Username: ') && !line.startsWith('Password: ')) {
+              const trimmed = line.trim();
+              if (trimmed && trimmed !== editingNote.email) {
+                parsedSecretNotes = parsedSecretNotes ? `${parsedSecretNotes}\n${trimmed}` : trimmed;
+              }
+            }
+          }
+        }
+        setSecretNotes(parsedSecretNotes);
+        setShowSecretNotes(!!parsedSecretNotes);
+        setShowPassword(false);
+
+        if (editingNote.todoItems && editingNote.todoItems.length > 0) {
+          setTodoItems(editingNote.todoItems);
+        } else if (editingNote.isTodo || determinedType === 'todo') {
+          setTodoItems(parseTodoItemsFromNote(editingNote));
+        } else {
+          setTodoItems([]);
+        }
+
+        setHasVoiceNote(!!editingNote.hasVoiceNote);
+        setAttachedImage(editingNote.imageUrl || null);
+      } else {
+        setEntryType(initialType);
+        setTitle('');
+        setContent('');
+        setServiceName('');
+        setEmailUsername('');
+        setPasswordValue('');
+        setSecretNotes('');
+        setShowSecretNotes(false);
+        setShowPassword(false);
+        setTodoItems([]);
+        setHasVoiceNote(false);
+        setAttachedImage(null);
+      }
+
       setNewTodoInput('');
       setBottomTextInput('');
       setIsPlusMenuOpen(false);
       setIsTypeDropdownOpen(false);
       setIsRecording(false);
-      setHasVoiceNote(false);
-      setAttachedImage(null);
 
       setTimeout(() => {
         titleInputRef.current?.focus();
       }, 150);
     }
-  }, [isOpen]);
+  }, [isOpen, editingNote, initialType]);
 
   // Click outside listeners for dropdowns
   useEffect(() => {
@@ -239,7 +296,65 @@ export function NewNoteModal({
     let finalTitle = title.trim();
     let finalContent = content.trim();
 
-    if (entryType === 'passwords') {
+    if (editingNote && onUpdateNote) {
+      if (entryType === 'passwords') {
+        finalTitle = serviceName.trim() || emailUsername.trim() || 'Account Key';
+        const lines = [];
+        if (emailUsername) lines.push(`Email/Username: ${emailUsername}`);
+        if (passwordValue) lines.push(`Password: ${passwordValue}`);
+        if (secretNotes) lines.push(`Notes: ${secretNotes}`);
+        finalContent = lines.join('\n');
+
+        onUpdateNote({
+          ...editingNote,
+          title: finalTitle,
+          content: finalContent,
+          entryType: 'passwords',
+          isSafe: true,
+          isVault: true,
+          service: serviceName,
+          email: emailUsername,
+          password: passwordValue,
+          hasVoiceNote,
+          imageUrl: attachedImage || undefined,
+        });
+      } else if (entryType === 'todo') {
+        finalTitle = title.trim() || 'Todo Checklist';
+        const finalTodoItems = [...todoItems];
+        if (newTodoInput.trim()) {
+          finalTodoItems.push({
+            id: Date.now().toString(),
+            text: newTodoInput.trim(),
+            completed: false,
+          });
+        }
+        const itemsList = finalTodoItems
+          .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.text}`)
+          .join('\n');
+        finalContent = itemsList;
+
+        onUpdateNote({
+          ...editingNote,
+          title: finalTitle,
+          content: finalContent,
+          entryType: 'todo',
+          isTodo: true,
+          todoItems: finalTodoItems,
+          hasVoiceNote,
+          imageUrl: attachedImage || undefined,
+        });
+      } else {
+        finalTitle = title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note');
+        onUpdateNote({
+          ...editingNote,
+          title: finalTitle,
+          content: finalContent,
+          entryType,
+          hasVoiceNote,
+          imageUrl: attachedImage || undefined,
+        });
+      }
+    } else if (entryType === 'passwords') {
       finalTitle = serviceName.trim() || emailUsername.trim() || 'Account Key';
       const lines = [];
       if (emailUsername) lines.push(`Email/Username: ${emailUsername}`);
@@ -456,7 +571,7 @@ export function NewNoteModal({
                   }`}
                 >
                   <Check className="w-3.5 h-3.5 stroke-[2.4]" />
-                  <span>Save</span>
+                  <span>{editingNote ? 'Update' : 'Save'}</span>
                 </button>
               </div>
             </div>
@@ -551,6 +666,10 @@ export function NewNoteModal({
                       <input
                         ref={titleInputRef}
                         type="text"
+                        name="memento_vault_title"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
                         value={serviceName}
                         onChange={(e) => setServiceName(e.target.value)}
                         placeholder="e.g. Google, GitHub, Netflix"
@@ -620,6 +739,11 @@ export function NewNoteModal({
                       </label>
                       <input
                         type="text"
+                        name="memento_vault_username"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         value={emailUsername}
                         onChange={(e) => setEmailUsername(e.target.value)}
                         placeholder="user@example.com or username"
@@ -667,6 +791,10 @@ export function NewNoteModal({
                       <div className="relative flex items-center">
                         <input
                           type={showPassword ? 'text' : 'password'}
+                          name="memento_vault_password"
+                          autoComplete="new-password"
+                          autoCorrect="off"
+                          spellCheck={false}
                           value={passwordValue}
                           onChange={(e) => setPasswordValue(e.target.value)}
                           placeholder="Secret key or password"

@@ -6,6 +6,7 @@ import { triggerHaptic } from '../lib/capacitor';
 interface NavBarProps {
   activeTab: NavTab;
   theme: ThemeMode;
+  isSettings?: boolean;
   onSelectTab: (tab: NavTab) => void;
   onOpenNewNote: () => void;
   onOpenDrawer: () => void;
@@ -14,18 +15,21 @@ interface NavBarProps {
 export function NavBar({
   activeTab,
   theme,
+  isSettings = false,
   onSelectTab,
   onOpenNewNote,
   onOpenDrawer,
 }: NavBarProps) {
   const isDark = theme === 'dark';
-  const isSafeActive = activeTab === 'vault' || activeTab === 'safe';
+  const isHomeActive = activeTab === 'home' && !isSettings;
+  const isTodoActive = activeTab === 'todo' && !isSettings;
+  const isSafeActive = (activeTab === 'vault' || activeTab === 'safe') && !isSettings;
 
   return (
     <nav
       id="bottom-nav-bar"
       aria-label="Main Navigation"
-      className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-0 right-0 z-30 px-4 flex justify-center pointer-events-none md:hidden"
+      className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-0 right-0 z-30 px-4 flex justify-center pointer-events-none md:hidden"
     >
       <div
         className={`pointer-events-auto w-full max-w-sm rounded-full px-2 py-2 flex items-center justify-between backdrop-blur-2xl transition-colors duration-200 ${
@@ -45,7 +49,7 @@ export function NavBar({
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="Home"
         >
-          {activeTab === 'home' && (
+          {isHomeActive && (
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
@@ -56,7 +60,7 @@ export function NavBar({
           )}
           <Home
             className={`w-5 h-5 relative z-10 transition-colors ${
-              activeTab === 'home'
+              isHomeActive
                 ? isDark
                   ? 'text-white'
                   : 'text-neutral-900'
@@ -64,7 +68,7 @@ export function NavBar({
                 ? 'text-neutral-400 group-hover:text-neutral-200'
                 : 'text-neutral-500 group-hover:text-neutral-800'
             }`}
-            strokeWidth={activeTab === 'home' ? 2.2 : 1.8}
+            strokeWidth={isHomeActive ? 2.2 : 1.8}
           />
         </button>
 
@@ -79,7 +83,7 @@ export function NavBar({
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="Todo"
         >
-          {activeTab === 'todo' && (
+          {isTodoActive && (
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
@@ -90,7 +94,7 @@ export function NavBar({
           )}
           <ListTodo
             className={`w-5 h-5 relative z-10 transition-colors ${
-              activeTab === 'todo'
+              isTodoActive
                 ? isDark
                   ? 'text-white'
                   : 'text-neutral-900'
@@ -98,7 +102,7 @@ export function NavBar({
                 ? 'text-neutral-400 group-hover:text-neutral-200'
                 : 'text-neutral-500 group-hover:text-neutral-800'
             }`}
-            strokeWidth={activeTab === 'todo' ? 2.2 : 1.8}
+            strokeWidth={isTodoActive ? 2.2 : 1.8}
           />
         </button>
 

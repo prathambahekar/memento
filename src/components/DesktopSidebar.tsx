@@ -42,13 +42,6 @@ export function DesktopSidebar({
 }: DesktopSidebarProps) {
   const isDark = theme === 'dark';
 
-  // Computed counts for badges
-  const totalNotes = notes.filter((n) => !n.isArchived).length;
-  const todoCount = notes.filter((n) => (n.isTodo || n.entryType === 'todo') && !n.isArchived).length;
-  const vaultCount = notes.filter((n) => (n.isSafe || n.isVault || n.entryType === 'passwords') && !n.isArchived).length;
-  const favCount = notes.filter((n) => n.isFavorite && !n.isArchived).length;
-  const diaryCount = notes.filter((n) => n.entryType === 'diary' && !n.isArchived).length;
-
   const isSafeActive = activeTab === 'vault' || activeTab === 'safe';
 
   // 1. All items from the mobile nav bar
@@ -58,7 +51,6 @@ export function DesktopSidebar({
       label: 'Home',
       icon: Home,
       isActive: currentPage === 'main' && (activeTab === 'home' || activeTab === 'notes'),
-      count: totalNotes,
       onClick: () => onSelectTab('home'),
     },
     {
@@ -66,7 +58,6 @@ export function DesktopSidebar({
       label: 'Todo',
       icon: ListTodo,
       isActive: currentPage === 'main' && activeTab === 'todo',
-      count: todoCount,
       onClick: () => onSelectTab('todo'),
     },
     {
@@ -74,7 +65,6 @@ export function DesktopSidebar({
       label: 'Safe',
       icon: Shield,
       isActive: currentPage === 'main' && isSafeActive,
-      count: vaultCount,
       onClick: () => onSelectTab('safe'),
     },
   ];
@@ -86,7 +76,6 @@ export function DesktopSidebar({
       label: 'Favourites',
       icon: Bookmark,
       isActive: currentPage === 'main' && activeTab === 'favorites',
-      count: favCount,
       onClick: () => onSelectTab('favorites'),
     },
     {
@@ -94,7 +83,6 @@ export function DesktopSidebar({
       label: 'Diary',
       icon: BookOpen,
       isActive: currentPage === 'main' && activeTab === 'diary',
-      count: diaryCount,
       onClick: () => onSelectTab('diary'),
     },
     {
@@ -102,7 +90,6 @@ export function DesktopSidebar({
       label: 'Settings',
       icon: Settings,
       isActive: currentPage === 'settings',
-      count: 0,
       onClick: onOpenSettings,
     },
   ];
@@ -112,7 +99,6 @@ export function DesktopSidebar({
     label: string;
     icon: typeof Home;
     isActive: boolean;
-    count: number;
     onClick: () => void;
   }) => {
     const Icon = item.icon;
@@ -123,7 +109,7 @@ export function DesktopSidebar({
           id={`desktop-nav-collapsed-${item.id}`}
           type="button"
           onClick={item.onClick}
-          title={item.label + (item.count > 0 ? ` (${item.count})` : '')}
+          title={item.label}
           className={`w-10 h-10 mx-auto rounded-2xl flex items-center justify-center transition-all relative ${
             item.isActive
               ? isDark
@@ -135,19 +121,6 @@ export function DesktopSidebar({
           }`}
         >
           <Icon className="w-4 h-4" />
-          {item.count > 0 && (
-            <span
-              className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${
-                item.isActive
-                  ? isDark
-                    ? 'bg-white'
-                    : 'bg-neutral-900'
-                  : isDark
-                  ? 'bg-neutral-500'
-                  : 'bg-neutral-400'
-              }`}
-            />
-          )}
         </button>
       );
     }
@@ -158,7 +131,7 @@ export function DesktopSidebar({
         id={`desktop-nav-${item.id}`}
         type="button"
         onClick={item.onClick}
-        className={`w-full relative flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+        className={`w-full relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
           item.isActive
             ? isDark
               ? 'text-white bg-[#1a1a1a] shadow-sm'
@@ -168,36 +141,18 @@ export function DesktopSidebar({
             : 'text-neutral-600 hover:text-neutral-900 hover:bg-[#f8f9fa]'
         }`}
       >
-        <div className="flex items-center gap-3 relative z-10">
-          <Icon
-            className={`w-4 h-4 transition-colors ${
-              item.isActive
-                ? isDark
-                  ? 'text-white'
-                  : 'text-neutral-900'
-                : isDark
-                ? 'text-neutral-400'
-                : 'text-neutral-500'
-            }`}
-          />
-          <span>{item.label}</span>
-        </div>
-
-        {item.count > 0 && (
-          <span
-            className={`text-[10.5px] px-2 py-0.5 rounded-full font-mono transition-colors relative z-10 ${
-              item.isActive
-                ? isDark
-                  ? 'bg-[#252525] text-neutral-200'
-                  : 'bg-white text-neutral-800 shadow-xs'
-                : isDark
-                ? 'bg-[#181818] text-neutral-500'
-                : 'bg-[#eeeff2] text-neutral-500'
-            }`}
-          >
-            {item.count}
-          </span>
-        )}
+        <Icon
+          className={`w-4 h-4 transition-colors shrink-0 ${
+            item.isActive
+              ? isDark
+                ? 'text-white'
+                : 'text-neutral-900'
+              : isDark
+              ? 'text-neutral-400'
+              : 'text-neutral-500'
+          }`}
+        />
+        <span>{item.label}</span>
       </button>
     );
   };
@@ -279,14 +234,14 @@ export function DesktopSidebar({
           </div>
         )}
 
-        {/* Primary Action: + New Note */}
+        {/* Primary Action: + Add */}
         <div className={isCollapsed ? 'px-2.5 py-3 flex justify-center' : 'px-5 py-3'}>
           {isCollapsed ? (
             <button
               id="desktop-new-note-collapsed-btn"
               type="button"
               onClick={onOpenNewNote}
-              title="New Thought (N)"
+              title="Add (N)"
               className={`w-10 h-10 rounded-2xl flex items-center justify-center font-semibold transition-all duration-150 active:scale-95 shadow-sm ${
                 isDark
                   ? 'bg-white text-black hover:bg-neutral-200'
@@ -300,23 +255,14 @@ export function DesktopSidebar({
               id="desktop-new-note-btn"
               type="button"
               onClick={onOpenNewNote}
-              className={`w-full py-3 px-4 rounded-2xl flex items-center justify-between font-semibold text-xs transition-all duration-150 active:scale-[0.98] shadow-sm ${
+              className={`w-full py-3 px-4 rounded-2xl flex items-center gap-2 font-semibold text-xs transition-all duration-150 active:scale-[0.98] shadow-sm ${
                 isDark
                   ? 'bg-white text-black hover:bg-neutral-200'
                   : 'bg-neutral-900 text-white hover:bg-black'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>New Thought</span>
-              </div>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                  isDark ? 'bg-black/10 text-neutral-700' : 'bg-white/20 text-neutral-300'
-                }`}
-              >
-                N
-              </span>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Add</span>
             </button>
           )}
         </div>

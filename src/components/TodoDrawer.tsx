@@ -9,6 +9,7 @@ import {
   CheckCheck,
   Clock,
   Calendar,
+  Pencil,
 } from 'lucide-react';
 import { ThemeMode, NoteItem, TodoSubItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
@@ -19,6 +20,7 @@ interface TodoDrawerProps {
   note: NoteItem | null;
   onClose: () => void;
   onUpdateNote: (updatedNote: NoteItem) => void;
+  onEdit?: (note: NoteItem) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -72,6 +74,7 @@ export function TodoDrawer({
   note,
   onClose,
   onUpdateNote,
+  onEdit,
   onDelete,
 }: TodoDrawerProps) {
   const isDark = theme === 'dark';
@@ -202,28 +205,64 @@ export function TodoDrawer({
                 </div>
               </div>
 
-              <button
-                id="todo-drawer-close-btn"
-                type="button"
-                onClick={onClose}
-                className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
-                  isDark
-                    ? 'bg-[#1e1e1e] text-neutral-300 hover:text-white'
-                    : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
-                }`}
-                aria-label="Close details"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {onEdit && (
+                  <button
+                    id="todo-drawer-edit-btn"
+                    type="button"
+                    onClick={() => onEdit(note)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+                      isDark
+                        ? 'bg-[#1e1e1e] text-neutral-400 hover:text-white'
+                        : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
+                    }`}
+                    aria-label="Edit todo list"
+                    title="Edit"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+
+                {onDelete && (
+                  <button
+                    id="todo-drawer-delete-btn"
+                    type="button"
+                    onClick={() => {
+                      onDelete(note.id);
+                      onClose();
+                    }}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all text-neutral-400 hover:text-red-400 ${
+                      isDark
+                        ? 'bg-[#1e1e1e] hover:bg-red-500/10'
+                        : 'bg-neutral-100 hover:bg-red-50'
+                    }`}
+                    aria-label="Delete todo list"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+
+                <button
+                  id="todo-drawer-close-btn"
+                  type="button"
+                  onClick={onClose}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+                    isDark
+                      ? 'bg-[#1e1e1e] text-neutral-300 hover:text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
+                  }`}
+                  aria-label="Close details"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Progress Bar Capsule */}
-            <div
-              className={`mt-3 p-3 rounded-2xl transition-colors ${
-                isDark ? 'bg-[#171717]' : 'bg-neutral-100/90'
-              }`}
-            >
-              <div className="flex items-center justify-between text-xs font-medium mb-1.5">
+            {/* Simple & Clean Progress Bar */}
+            <div className="mt-3 px-1">
+              <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className={isDark ? 'text-neutral-400' : 'text-neutral-600'}>
                   Progress
                 </span>
@@ -232,16 +271,16 @@ export function TodoDrawer({
                     progressPercent === 100
                       ? 'text-emerald-500'
                       : isDark
-                      ? 'text-neutral-200'
-                      : 'text-neutral-800'
+                      ? 'text-neutral-300'
+                      : 'text-neutral-700'
                   }`}
                 >
                   {progressPercent}%
                 </span>
               </div>
               <div
-                className={`w-full h-2 rounded-full overflow-hidden ${
-                  isDark ? 'bg-[#222222]' : 'bg-neutral-200'
+                className={`w-full h-1.5 rounded-full overflow-hidden ${
+                  isDark ? 'bg-neutral-800' : 'bg-neutral-200'
                 }`}
               >
                 <div
@@ -257,51 +296,30 @@ export function TodoDrawer({
               </div>
             </div>
 
-            {/* Quick Add Task Input */}
-            <div className="mt-3">
-              <div
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border transition-all ${
-                  isDark
-                    ? 'bg-[#181818] border-neutral-800 focus-within:border-neutral-700'
-                    : 'bg-neutral-50 border-neutral-200 focus-within:border-neutral-300'
-                }`}
-              >
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={newTaskInput}
-                  onChange={(e) => setNewTaskInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddTask();
-                    }
-                  }}
-                  placeholder="Add a new task..."
-                  className={`flex-1 bg-transparent text-xs sm:text-sm py-1.5 focus:outline-none placeholder:text-neutral-500 ${
-                    isDark ? 'text-white' : 'text-neutral-900'
-                  }`}
-                />
+            {/* Bulk Actions at top below progress bar (no splitting lines) */}
+            {totalCount > 1 && (
+              <div className="flex items-center justify-between px-1 pt-2.5 pb-0.5 text-[11.5px]">
                 <button
                   type="button"
-                  onClick={handleAddTask}
-                  disabled={!newTaskInput.trim()}
-                  className={`h-7 px-3 rounded-full flex items-center gap-1 text-xs font-medium active:scale-95 transition-all ${
-                    newTaskInput.trim()
-                      ? isDark
-                        ? 'bg-white text-black hover:bg-neutral-200'
-                        : 'bg-neutral-900 text-white hover:bg-neutral-800'
-                      : 'opacity-40 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
+                  onClick={handleToggleAll}
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
                   }`}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add</span>
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span>
+                    {completedCount === totalCount ? 'Uncheck all' : 'Mark all completed'}
+                  </span>
                 </button>
+
+                <span className={isDark ? 'text-neutral-500' : 'text-neutral-400'}>
+                  {completedCount} / {totalCount} completed
+                </span>
               </div>
-            </div>
+            )}
 
             {/* Tasks List */}
-            <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 py-3 mt-1 min-h-[140px]">
+            <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 py-2 mt-1 min-h-[140px]">
               {currentItems.length === 0 ? (
                 <div
                   className={`py-8 text-center rounded-2xl ${
@@ -317,7 +335,7 @@ export function TodoDrawer({
                     No tasks in this list yet.
                   </p>
                   <p className="text-[11px] text-neutral-500 mt-0.5">
-                    Type above to add your first item.
+                    Type below to add your first item.
                   </p>
                 </div>
               ) : (
@@ -385,57 +403,47 @@ export function TodoDrawer({
               )}
             </div>
 
-            {/* Quick Bulk Actions (if tasks exist) */}
-            {totalCount > 1 && (
-              <div className="flex items-center justify-between px-1 py-1.5 border-t border-neutral-800/40 text-[11.5px]">
-                <button
-                  type="button"
-                  onClick={handleToggleAll}
-                  className={`flex items-center gap-1 transition-colors ${
-                    isDark ? 'text-neutral-400 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
-                  }`}
-                >
-                  <CheckCheck className="w-3.5 h-3.5" />
-                  <span>
-                    {completedCount === totalCount ? 'Uncheck all' : 'Mark all completed'}
-                  </span>
-                </button>
-
-                <span className={isDark ? 'text-neutral-500' : 'text-neutral-400'}>
-                  {completedCount} / {totalCount} completed
-                </span>
-              </div>
-            )}
-
-            {/* Bottom Actions */}
-            <div className="pt-3 border-t border-neutral-800/30 flex items-center justify-between gap-3">
-              {onDelete ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDelete(note.id);
-                    onClose();
-                  }}
-                  className="h-9 px-3.5 rounded-full flex items-center gap-1.5 text-xs font-medium active:scale-95 transition-all text-red-400 hover:bg-red-500/10"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete List</span>
-                </button>
-              ) : (
-                <div />
-              )}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className={`h-9 px-6 rounded-full flex items-center justify-center text-xs font-semibold active:scale-95 transition-all ${
+            {/* Quick Add Task Input at Bottom */}
+            <div className="mt-2 pt-1">
+              <div
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border transition-all ${
                   isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-neutral-900 text-white hover:bg-neutral-800'
+                    ? 'bg-[#181818] border-neutral-800 focus-within:border-neutral-700'
+                    : 'bg-neutral-50 border-neutral-200 focus-within:border-neutral-300'
                 }`}
               >
-                Done
-              </button>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={newTaskInput}
+                  onChange={(e) => setNewTaskInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddTask();
+                    }
+                  }}
+                  placeholder="Add a new task..."
+                  className={`flex-1 bg-transparent text-xs sm:text-sm py-1.5 focus:outline-none placeholder:text-neutral-500 ${
+                    isDark ? 'text-white' : 'text-neutral-900'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddTask}
+                  disabled={!newTaskInput.trim()}
+                  className={`h-7 px-3 rounded-full flex items-center gap-1 text-xs font-medium active:scale-95 transition-all ${
+                    newTaskInput.trim()
+                      ? isDark
+                        ? 'bg-white text-black hover:bg-neutral-200'
+                        : 'bg-neutral-900 text-white hover:bg-neutral-800'
+                      : 'opacity-40 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add</span>
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

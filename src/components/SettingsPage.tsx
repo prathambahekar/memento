@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft,
@@ -17,6 +17,7 @@ import { ThemeMode } from '../types';
 import { NoteItem } from './EmptyBody';
 import { DataDrawer } from './DataDrawer';
 import { useIsDesktop } from '../hooks/useIsDesktop';
+import { getAppVersion } from '../lib/capacitor';
 
 interface SettingsPageProps {
   theme: ThemeMode;
@@ -39,6 +40,15 @@ export function SettingsPage({
   const isDesktop = useIsDesktop();
   const [activeModal, setActiveModal] = useState<'none' | 'data' | 'info'>('none');
   const [copiedNotification, setCopiedNotification] = useState(false);
+  const [appInfo, setAppInfo] = useState<{ name: string; version: string; build: string }>({
+    name: 'Memento',
+    version: '1.0.0',
+    build: '1',
+  });
+
+  useEffect(() => {
+    getAppVersion().then(setAppInfo).catch(() => {});
+  }, []);
 
   const handleExportData = () => {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(notes, null, 2));
@@ -59,7 +69,7 @@ export function SettingsPage({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
-      className={`relative w-full h-full min-h-[640px] flex flex-col transition-colors duration-200 ${
+      className={`relative w-full h-full flex flex-col transition-colors duration-200 ${
         isDark ? 'bg-[#0a0a0a] text-white' : 'bg-[#f4f4f6] text-neutral-900'
       }`}
     >
@@ -84,7 +94,7 @@ export function SettingsPage({
       </header>
 
       {/* Main Settings Content List */}
-      <main className="flex-1 max-w-2xl mx-auto w-full px-5 md:px-8 pt-2 md:pt-6 pb-10 overflow-y-auto no-scrollbar space-y-6">
+      <main className="flex-1 min-h-0 max-w-2xl mx-auto w-full px-5 md:px-8 pt-2 md:pt-6 pb-28 md:pb-10 overflow-y-auto overscroll-contain no-scrollbar space-y-6">
         {/* SECTION 1: APPEARANCE */}
         <section>
           <div
@@ -271,7 +281,7 @@ export function SettingsPage({
                     : 'bg-[#f0f1f4] text-neutral-700'
                 }`}
               >
-                v1.0.0
+                v{appInfo.version}
               </span>
               <ChevronRight
                 className={`w-4 h-4 ${
@@ -404,7 +414,7 @@ export function SettingsPage({
                 <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
                   Version
                 </span>
-                <span className="font-mono">1.0.0</span>
+                <span className="font-mono">{appInfo.version}</span>
               </div>
             </motion.div>
           </div>

@@ -70,8 +70,9 @@ export function EmptyBody({
   // If there are notes to show
   if (filteredNotes.length > 0) {
     return (
-      <main className="flex-1 px-5 md:px-8 lg:px-10 pt-3 md:pt-6 pb-24 md:pb-8 overflow-y-auto no-scrollbar">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 md:gap-4">
+      <main className="flex-1 min-h-0 w-full px-3.5 sm:px-5 md:px-8 lg:px-10 pt-3 md:pt-6 pb-28 md:pb-8 overflow-y-auto overscroll-contain no-scrollbar">
+        {/* Pinterest-style Masonry Multi-column Grid */}
+        <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 md:gap-3.5">
           {filteredNotes.map((note) => {
             const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
             const isTodo = note.entryType === 'todo' || !!note.isTodo;
@@ -86,7 +87,7 @@ export function EmptyBody({
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 onClick={() => onSelectNote?.(note)}
-                className={`p-4 md:p-5 rounded-2xl active:scale-[0.99] transition-all cursor-pointer shadow-sm flex flex-col justify-between border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-800/80 ${
+                className={`break-inside-avoid inline-block w-full mb-3 md:mb-3.5 p-3.5 sm:p-4 rounded-2xl active:scale-[0.99] transition-all cursor-pointer shadow-xs border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-800/80 ${
                   isDark
                     ? 'bg-[#141414] hover:bg-[#1a1a1a]'
                     : 'bg-[#ffffff] hover:bg-[#fafafa]'
@@ -95,12 +96,13 @@ export function EmptyBody({
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <h3
-                      className={`text-base font-semibold tracking-tight ${
+                      className={`text-sm sm:text-base font-semibold tracking-tight break-words min-w-0 ${
                         isDark ? 'text-white' : 'text-neutral-900'
                       }`}
                     >
                       {note.title}
                     </h3>
+                    {/* Badges: Icon-only (no label text) */}
                     {isPassKey && (
                       <button
                         type="button"
@@ -108,15 +110,15 @@ export function EmptyBody({
                           e.stopPropagation();
                           onSelectNote?.(note);
                         }}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 transition-all ${
+                        className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all ${
                           isDark
                             ? 'bg-[#222222] hover:bg-[#2c2c2c] text-neutral-300'
                             : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
                         }`}
-                        title="Open Key drawer"
+                        title="Password / Key"
+                        aria-label="Password / Key"
                       >
-                        <KeyRound className="w-3 h-3" />
-                        <span>Key</span>
+                        <KeyRound className="w-3.5 h-3.5" />
                       </button>
                     )}
                     {isTodo && (
@@ -126,56 +128,40 @@ export function EmptyBody({
                           e.stopPropagation();
                           onSelectNote?.(note);
                         }}
-                        className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-medium flex items-center gap-1 shrink-0 transition-all active:scale-95 ${
+                        className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
                           completedCount === totalCount && totalCount > 0
                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                             : isDark
                             ? 'bg-[#222222] hover:bg-[#2c2c2c] text-neutral-300'
                             : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
                         }`}
-                        title="Open Todo drawer"
+                        title="Todo checklist"
+                        aria-label="Todo checklist"
                       >
-                        <ListTodo className="w-3 h-3" />
-                        <span>{totalCount > 0 ? `${completedCount}/${totalCount}` : 'Todo'}</span>
+                        <ListTodo className="w-3.5 h-3.5" />
                       </button>
                     )}
                     {!isPassKey && !isTodo && note.entryType === 'diary' && (
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 ${
+                        className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
                           isDark
                             ? 'bg-[#222222] text-neutral-300'
                             : 'bg-neutral-100 text-neutral-700'
                         }`}
+                        title="Diary"
+                        aria-label="Diary"
                       >
-                        <BookOpen className="w-3 h-3" />
-                        <span>Diary</span>
+                        <BookOpen className="w-3.5 h-3.5" />
                       </span>
                     )}
                   </div>
 
-                  {/* Todo Card Body: clean interactive tasks & sleek progress bar */}
+                  {/* Todo Card Body: clean interactive tasks (progress bar removed) */}
                   {isTodo && (
-                    <div className="mt-2.5 space-y-2">
-                      {totalCount > 0 && (
-                        <div className="w-full bg-neutral-200 dark:bg-neutral-800 h-1 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              completedCount === totalCount
-                                ? 'bg-emerald-500'
-                                : isDark
-                                ? 'bg-white'
-                                : 'bg-neutral-900'
-                            }`}
-                            style={{
-                              width: `${(completedCount / totalCount) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-
+                    <div className="mt-2 space-y-2">
                       {todoItems.length > 0 ? (
                         <div className="space-y-1.5 pt-0.5">
-                          {todoItems.slice(0, 3).map((item) => (
+                          {todoItems.slice(0, 8).map((item) => (
                             <div
                               key={item.id}
                               className="flex items-center gap-2 group/task"
@@ -213,13 +199,13 @@ export function EmptyBody({
                             </div>
                           ))}
 
-                          {todoItems.length > 3 && (
+                          {todoItems.length > 8 && (
                             <div
                               className={`text-[10.5px] font-medium pt-0.5 ${
                                 isDark ? 'text-neutral-500' : 'text-neutral-400'
                               }`}
                             >
-                              +{todoItems.length - 3} more tasks
+                              +{todoItems.length - 8} more tasks
                             </div>
                           )}
                         </div>
@@ -231,7 +217,7 @@ export function EmptyBody({
 
                       {cleanContent && (
                         <p
-                          className={`text-xs mt-1.5 line-clamp-2 leading-relaxed ${
+                          className={`text-xs mt-1.5 line-clamp-4 leading-relaxed break-words ${
                             isDark ? 'text-neutral-400' : 'text-neutral-600'
                           }`}
                         >
@@ -241,18 +227,38 @@ export function EmptyBody({
                     </div>
                   )}
 
-                  {/* Standard Notes / Diary Content */}
+                  {/* Password / Key Content Preview */}
+                  {isPassKey && (
+                    <div className="mt-2 space-y-1">
+                      {note.email && (
+                        <div className="text-[11.5px] font-mono text-neutral-400 truncate">
+                          {note.email}
+                        </div>
+                      )}
+                      {note.content && !note.email && (
+                        <p
+                          className={`text-xs line-clamp-3 leading-relaxed break-words ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-600'
+                          }`}
+                        >
+                          {note.content.split('\n')[0]}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Standard Notes / Diary Content - expanded vertically to show more data */}
                   {!isTodo && !isPassKey && (
                     <div className="mt-2 space-y-1.5">
                       {note.email && (
-                        <div className="text-[11.5px] font-mono text-neutral-400">
+                        <div className="text-[11.5px] font-mono text-neutral-400 truncate">
                           {note.email}
                         </div>
                       )}
 
                       {note.content && (
                         <p
-                          className={`text-xs line-clamp-3 leading-relaxed ${
+                          className={`text-xs line-clamp-8 leading-relaxed break-words whitespace-pre-line ${
                             isDark ? 'text-neutral-400' : 'text-neutral-600'
                           }`}
                         >
@@ -263,24 +269,26 @@ export function EmptyBody({
                   )}
                 </div>
 
-                <div
-                  className={`mt-3 flex items-center justify-between text-[11px] ${
-                    isDark ? 'text-neutral-500' : 'text-neutral-400'
-                  }`}
-                >
-                  <span>{note.date}</span>
-                  <div className="flex items-center gap-2">
-                    {note.hasVoiceNote && (
-                      <span className="flex items-center gap-1 text-emerald-500">
-                        <Mic className="w-3 h-3" />
-                        <span>Voice</span>
-                      </span>
-                    )}
-                    {note.imageUrl && (
-                      <span className="text-blue-500">Photo</span>
-                    )}
+                {/* Footer: Date removed completely as requested; showing voice/photo indicator if present */}
+                {(note.hasVoiceNote || note.imageUrl) && (
+                  <div
+                    className={`mt-2.5 flex items-center justify-end text-[11px] ${
+                      isDark ? 'text-neutral-500' : 'text-neutral-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {note.hasVoiceNote && (
+                        <span className="flex items-center gap-1 text-emerald-500">
+                          <Mic className="w-3 h-3" />
+                          <span>Voice</span>
+                        </span>
+                      )}
+                      {note.imageUrl && (
+                        <span className="text-blue-500">Photo</span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </motion.div>
             );
           })}
@@ -353,7 +361,7 @@ export function EmptyBody({
   return (
     <main
       id="empty-body"
-      className="flex-1 px-6 flex flex-col items-center justify-center text-center pb-20 select-none"
+      className="flex-1 min-h-0 w-full px-6 flex flex-col items-center justify-center text-center pb-28 md:pb-8 overflow-y-auto overscroll-contain select-none"
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}

@@ -104,3 +104,27 @@ export const registerNativeBackButton = (onBack: () => boolean | Promise<boolean
     handlePromise.then((handle) => handle.remove()).catch(() => {});
   };
 };
+
+/**
+ * Fetch native app version and build number, with fallback for web
+ */
+export const getAppVersion = async (): Promise<{ version: string; build: string; name: string }> => {
+  if (Capacitor.isPluginAvailable('App')) {
+    try {
+      const info = await CapApp.getInfo();
+      return {
+        name: info.name || 'Memento',
+        version: info.version || '1.0.0',
+        build: info.build || '1',
+      };
+    } catch {
+      // ignore
+    }
+  }
+  return {
+    name: 'Memento',
+    version: '1.0.0',
+    build: '1',
+  };
+};
+

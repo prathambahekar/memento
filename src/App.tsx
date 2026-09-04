@@ -30,10 +30,16 @@ export default function App() {
   const [isDataDrawerOpen, setIsDataDrawerOpen] = useState(false);
   const [isSearchDrawerOpen, setIsSearchDrawerOpen] = useState(false);
   const [isNewNoteOpen, setIsNewNoteOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
   const [selectedPassKeyNote, setSelectedPassKeyNote] = useState<NoteItem | null>(null);
   const [selectedTodoNote, setSelectedTodoNote] = useState<NoteItem | null>(null);
   const [selectedDiaryNote, setSelectedDiaryNote] = useState<NoteItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const handleOpenNewNote = () => {
+    setEditingNote(null);
+    setIsNewNoteOpen(true);
+  };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     return localStorage.getItem('memento_sidebar_collapsed') === 'true';
   });
@@ -149,7 +155,7 @@ export default function App() {
         setIsSearchDrawerOpen(true);
       } else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        setIsNewNoteOpen(true);
+        handleOpenNewNote();
       } else if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         e.preventDefault();
         toggleSidebar();
@@ -276,13 +282,13 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-dvh w-full flex justify-center transition-colors duration-200 ${
+      className={`h-full h-dvh w-full flex justify-center overflow-hidden transition-colors duration-200 ${
         isDark ? 'bg-[#000000] text-[#f4f4f5]' : 'bg-[#e8e9ed] text-[#18181b]'
       }`}
     >
       {/* Responsive Workspace: mobile frame on phone screens, full-width desktop workstation on larger screens */}
       <div
-        className={`w-full max-w-md md:max-w-none md:w-full h-dvh flex flex-col md:flex-row relative overflow-hidden transition-colors duration-200 ${
+        className={`w-full max-w-md md:max-w-none md:w-full h-full flex flex-col md:flex-row relative overflow-hidden transition-colors duration-200 ${
           isDark ? 'bg-[#0a0a0a]' : 'bg-[#f8f9fa]'
         }`}
       >
@@ -298,7 +304,7 @@ export default function App() {
             setActiveTab(tab);
             setCurrentPage('main');
           }}
-          onOpenNewNote={() => setIsNewNoteOpen(true)}
+          onOpenNewNote={handleOpenNewNote}
           onOpenSearch={() => setIsSearchDrawerOpen(true)}
           onOpenData={() => setIsDataDrawerOpen(true)}
           onOpenSettings={() => setCurrentPage('settings')}
@@ -306,7 +312,7 @@ export default function App() {
         />
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden relative">
           {currentPage === 'settings' ? (
             <SettingsPage
               theme={theme}
@@ -318,7 +324,7 @@ export default function App() {
             />
           ) : (
             <>
-              {/* Top Bar: 'memento' on mobile, Section title + Search & Note buttons on desktop */}
+              {/* Top Bar: 'memento' on mobile, Section title + Search on desktop */}
               <TopBar
                 theme={theme}
                 activeTab={activeTab}
@@ -327,7 +333,6 @@ export default function App() {
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 onOpenSearch={() => setIsSearchDrawerOpen(true)}
-                onOpenNewNote={() => setIsNewNoteOpen(true)}
               />
 
               {/* Empty Body: responsive notes grid on desktop, single column on mobile */}
@@ -336,24 +341,25 @@ export default function App() {
                 theme={theme}
                 notes={notes}
                 searchQuery={searchQuery}
-                onOpenNewNote={() => setIsNewNoteOpen(true)}
+                onOpenNewNote={handleOpenNewNote}
                 onSelectNote={handleSelectNote}
                 onToggleTodoItem={handleToggleTodoItem}
               />
-
-              {/* Bottom Nav Bar: auto-hidden on desktop (md:hidden) */}
-              <NavBar
-                activeTab={activeTab}
-                theme={theme}
-                onSelectTab={(tab) => {
-                  setActiveTab(tab);
-                  setCurrentPage('main');
-                }}
-                onOpenNewNote={() => setIsNewNoteOpen(true)}
-                onOpenDrawer={() => setIsDrawerOpen(true)}
-              />
             </>
           )}
+
+          {/* Bottom Nav Bar: auto-hidden on desktop (md:hidden) - always visible on mobile, even in settings */}
+          <NavBar
+            activeTab={activeTab}
+            theme={theme}
+            isSettings={currentPage === 'settings'}
+            onSelectTab={(tab) => {
+              setActiveTab(tab);
+              setCurrentPage('main');
+            }}
+            onOpenNewNote={handleOpenNewNote}
+            onOpenDrawer={() => setIsDrawerOpen(true)}
+          />
         </div>
 
         {/* Search Drawer opened by top-bar Search button */}
@@ -383,15 +389,34 @@ export default function App() {
         <NewNoteModal
           isOpen={isNewNoteOpen}
           theme={theme}
+          editingNote={editingNote}
           initialType={
-            activeTab === 'todo'
+            editingNote
+              ? editingNote.entryType ||
+                (editingNote.isTodo
+                  ? 'todo'
+                  : editingNote.isSafe || editingNote.isVault
+                  ? 'passwords'
+                  : 'diary')
+              : activeTab === 'todo'
               ? 'todo'
               : activeTab === 'vault' || activeTab === 'safe'
               ? 'passwords'
               : 'diary'
           }
-          onClose={() => setIsNewNoteOpen(false)}
+          onClose={() => {
+            setIsNewNoteOpen(false);
+            setEditingNote(null);
+          }}
           onSaveNote={handleSaveNote}
+          onUpdateNote={(updated) => {
+            triggerHaptic('success');
+            setNotes((prev) =>
+              prev.map((n) => (n.id === updated.id ? updated : n))
+            );
+            setIsNewNoteOpen(false);
+            setEditingNote(null);
+          }}
         />
 
         {/* Pass / Key Detail Drawer Menu */}
@@ -400,6 +425,11 @@ export default function App() {
           theme={theme}
           note={selectedPassKeyNote}
           onClose={() => setSelectedPassKeyNote(null)}
+          onEdit={(note) => {
+            setSelectedPassKeyNote(null);
+            setEditingNote(note);
+            setIsNewNoteOpen(true);
+          }}
           onDelete={(id) => {
             setNotes((prev) => prev.filter((n) => n.id !== id));
             setSelectedPassKeyNote(null);
@@ -412,6 +442,11 @@ export default function App() {
           theme={theme}
           note={selectedTodoNote}
           onClose={() => setSelectedTodoNote(null)}
+          onEdit={(note) => {
+            setSelectedTodoNote(null);
+            setEditingNote(note);
+            setIsNewNoteOpen(true);
+          }}
           onUpdateNote={(updated) => {
             setNotes((prev) =>
               prev.map((n) => (n.id === updated.id ? updated : n))
@@ -430,6 +465,11 @@ export default function App() {
           theme={theme}
           note={selectedDiaryNote}
           onClose={() => setSelectedDiaryNote(null)}
+          onEdit={(note) => {
+            setSelectedDiaryNote(null);
+            setEditingNote(note);
+            setIsNewNoteOpen(true);
+          }}
           onDelete={(id) => {
             setNotes((prev) => prev.filter((n) => n.id !== id));
             setSelectedDiaryNote(null);

@@ -16,6 +16,14 @@
     scrollbar-width: none; /* Firefox */
   }
 
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-tap-highlight-color: transparent;
@@ -24,10 +32,34 @@
     user-select: none;
     background-color: #09090b;
     color: #f4f4f5;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    padding-left: env(safe-area-inset-left, 0px);
-    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Prevent browser autofill from breaking dark/light mode input backgrounds */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus,
+  textarea:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #1a1a1a inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  html:not(.dark) input:-webkit-autofill,
+  html:not(.dark) input:-webkit-autofill:hover,
+  html:not(.dark) input:-webkit-autofill:focus,
+  html:not(.dark) input:-webkit-autofill:active,
+  html:not(.dark) textarea:-webkit-autofill,
+  html:not(.dark) textarea:-webkit-autofill:hover,
+  html:not(.dark) textarea:-webkit-autofill:focus,
+  html:not(.dark) textarea:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #f4f4f6 inset !important;
+    -webkit-text-fill-color: #18181b !important;
+    caret-color: #18181b !important;
   }
 }
 

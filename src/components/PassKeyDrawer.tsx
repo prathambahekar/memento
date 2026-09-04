@@ -11,7 +11,7 @@ import {
   Lock,
   FileText,
   User,
-  ShieldCheck,
+  Pencil,
 } from 'lucide-react';
 import { ThemeMode, NoteItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
@@ -21,6 +21,7 @@ interface PassKeyDrawerProps {
   theme: ThemeMode;
   note: NoteItem | null;
   onClose: () => void;
+  onEdit?: (note: NoteItem) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -29,6 +30,7 @@ export function PassKeyDrawer({
   theme,
   note,
   onClose,
+  onEdit,
   onDelete,
 }: PassKeyDrawerProps) {
   const isDark = theme === 'dark';
@@ -108,7 +110,7 @@ export function PassKeyDrawer({
               />
             </div>
 
-            {/* Header: Title + Key icon + Close */}
+            {/* Header: Title + Key icon + Close & Delete */}
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
@@ -127,26 +129,63 @@ export function PassKeyDrawer({
                       isDark ? 'text-neutral-500' : 'text-neutral-400'
                     }`}
                   >
-                    <span>Pass / Key</span>
-                    <span>•</span>
                     <span>{note.date}</span>
                   </div>
                 </div>
               </div>
 
-              <button
-                id="passkey-drawer-close-btn"
-                type="button"
-                onClick={onClose}
-                className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
-                  isDark
-                    ? 'bg-[#1e1e1e] text-neutral-300 hover:text-white'
-                    : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
-                }`}
-                aria-label="Close details"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {onEdit && (
+                  <button
+                    id="passkey-drawer-edit-btn"
+                    type="button"
+                    onClick={() => onEdit(note)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+                      isDark
+                        ? 'bg-[#1e1e1e] text-neutral-400 hover:text-white'
+                        : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
+                    }`}
+                    aria-label="Edit entry"
+                    title="Edit"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+
+                {onDelete && (
+                  <button
+                    id="passkey-drawer-delete-btn"
+                    type="button"
+                    onClick={() => {
+                      onDelete(note.id);
+                      onClose();
+                    }}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all text-neutral-400 hover:text-red-400 ${
+                      isDark
+                        ? 'bg-[#1e1e1e] hover:bg-red-500/10'
+                        : 'bg-neutral-100 hover:bg-red-50'
+                    }`}
+                    aria-label="Delete entry"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+
+                <button
+                  id="passkey-drawer-close-btn"
+                  type="button"
+                  onClick={onClose}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+                    isDark
+                      ? 'bg-[#1e1e1e] text-neutral-300 hover:text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
+                  }`}
+                  aria-label="Close details"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Details Body */}
@@ -325,49 +364,6 @@ export function PassKeyDrawer({
                   </div>
                 </div>
               )}
-
-              {/* Security confirmation footer */}
-              <div
-                className={`px-3 py-2 rounded-xl flex items-center gap-2 text-[11px] ${
-                  isDark
-                    ? 'bg-[#171717] text-neutral-500'
-                    : 'bg-neutral-100 text-neutral-500'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-neutral-400" />
-                <span>Protected entry • Hidden on main list</span>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-4 flex items-center justify-between gap-3">
-              {onDelete ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDelete(note.id);
-                    onClose();
-                  }}
-                  className={`h-9 px-3.5 rounded-full flex items-center gap-1.5 text-xs font-medium active:scale-95 transition-all text-red-400 hover:bg-red-500/10`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
-                </button>
-              ) : (
-                <div />
-              )}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className={`h-9 px-5 rounded-full flex items-center justify-center text-xs font-medium active:scale-95 transition-all ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-neutral-900 text-white hover:bg-neutral-800'
-                }`}
-              >
-                Done
-              </button>
             </div>
           </motion.div>
         </div>

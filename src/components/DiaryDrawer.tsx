@@ -3,11 +3,11 @@ import {
   BookOpen,
   X,
   Trash2,
-  Bookmark,
   Calendar,
   Mic,
   Copy,
   Check,
+  Pencil,
 } from 'lucide-react';
 import { useState } from 'react';
 import { ThemeMode, NoteItem } from '../types';
@@ -18,6 +18,7 @@ interface DiaryDrawerProps {
   theme: ThemeMode;
   note: NoteItem | null;
   onClose: () => void;
+  onEdit?: (note: NoteItem) => void;
   onDelete?: (id: string) => void;
   onToggleFavorite?: (id: string) => void;
 }
@@ -27,6 +28,7 @@ export function DiaryDrawer({
   theme,
   note,
   onClose,
+  onEdit,
   onDelete,
   onToggleFavorite,
 }: DiaryDrawerProps) {
@@ -98,8 +100,6 @@ export function DiaryDrawer({
                       isDark ? 'text-neutral-400' : 'text-neutral-500'
                     }`}
                   >
-                    <span>{note.entryType === 'diary' ? 'Personal Diary' : 'Note'}</span>
-                    <span>•</span>
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
                       {note.date}
@@ -108,26 +108,46 @@ export function DiaryDrawer({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1">
-                {onToggleFavorite && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                {onEdit && (
                   <button
+                    id="diary-drawer-edit-btn"
                     type="button"
-                    onClick={() => onToggleFavorite(note.id)}
+                    onClick={() => onEdit(note)}
                     className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
-                      note.isFavorite
-                        ? 'text-amber-400 bg-amber-400/10'
-                        : isDark
-                        ? 'text-neutral-400 hover:text-white'
-                        : 'text-neutral-500 hover:text-neutral-900'
+                      isDark
+                        ? 'bg-[#1e1e1e] text-neutral-400 hover:text-white'
+                        : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
                     }`}
-                    aria-label="Toggle favorite"
+                    aria-label="Edit note"
+                    title="Edit"
                   >
-                    <Bookmark
-                      className={`w-4 h-4 ${note.isFavorite ? 'fill-current' : ''}`}
-                    />
+                    <Pencil className="w-4 h-4" />
                   </button>
                 )}
+
+                {onDelete && (
+                  <button
+                    id="diary-drawer-delete-btn"
+                    type="button"
+                    onClick={() => {
+                      onDelete(note.id);
+                      onClose();
+                    }}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all text-neutral-400 hover:text-red-400 ${
+                      isDark
+                        ? 'bg-[#1e1e1e] hover:bg-red-500/10'
+                        : 'bg-neutral-100 hover:bg-red-50'
+                    }`}
+                    aria-label="Delete note"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+
                 <button
+                  id="diary-drawer-close-btn"
                   type="button"
                   onClick={onClose}
                   className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
@@ -136,6 +156,7 @@ export function DiaryDrawer({
                       : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
                   }`}
                   aria-label="Close"
+                  title="Close"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -166,57 +187,45 @@ export function DiaryDrawer({
               )}
 
               <div
-                className={`p-4 rounded-2xl leading-relaxed text-sm whitespace-pre-wrap ${
-                  isDark ? 'bg-[#181818] text-neutral-200' : 'bg-neutral-100/80 text-neutral-800'
+                className={`p-3.5 sm:p-4 rounded-2xl transition-colors ${
+                  isDark ? 'bg-[#181818]' : 'bg-neutral-100/80'
                 }`}
               >
-                {note.content || 'No content written in this note.'}
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-3 border-t border-neutral-800/30 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                {onDelete && (
+                <div className="flex items-center justify-end mb-2">
                   <button
+                    id="diary-card-copy-btn"
                     type="button"
-                    onClick={() => {
-                      onDelete(note.id);
-                      onClose();
-                    }}
-                    className="h-9 px-3.5 rounded-full flex items-center gap-1.5 text-xs font-medium active:scale-95 transition-all text-red-400 hover:bg-red-500/10"
+                    onClick={handleCopy}
+                    className={`h-6 px-2 rounded-lg flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
+                      copied
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : isDark
+                        ? 'bg-[#262626] hover:bg-[#303030] text-neutral-300'
+                        : 'bg-neutral-200 hover:bg-neutral-300 text-neutral-800'
+                    }`}
+                    title={copied ? 'Copied' : 'Copy'}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
+                    {copied ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className={`h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-medium active:scale-95 transition-all ${
-                    copied
-                      ? 'text-emerald-400 bg-emerald-500/10'
-                      : isDark
-                      ? 'text-neutral-400 hover:text-white'
-                      : 'text-neutral-600 hover:text-neutral-900'
+                </div>
+                <div
+                  className={`leading-relaxed text-sm whitespace-pre-wrap ${
+                    isDark ? 'text-neutral-200' : 'text-neutral-800'
                   }`}
                 >
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
-                </button>
+                  {note.content || 'No content written in this note.'}
+                </div>
               </div>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className={`h-9 px-6 rounded-full flex items-center justify-center text-xs font-semibold active:scale-95 transition-all ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-neutral-900 text-white hover:bg-neutral-800'
-                }`}
-              >
-                Done
-              </button>
             </div>
           </motion.div>
         </div>
