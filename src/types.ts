@@ -26,6 +26,14 @@ export interface TodoSubItem {
   completed: boolean;
 }
 
+export interface VoiceNoteAttachment {
+  id: string;
+  audioUrl: string;
+  duration?: string;
+  createdAt?: string;
+  name?: string;
+}
+
 export interface NoteItem {
   id: string;
   title: string;
@@ -43,5 +51,17 @@ export interface NoteItem {
   todoItems?: TodoSubItem[];
   hasVoiceNote?: boolean;
   voiceDuration?: string;
+  voiceAudioUrl?: string;
+  voiceNotes?: VoiceNoteAttachment[];
   imageUrl?: string;
+  images?: string[];
+}
+
+export type CategoryFilter = 'all' | 'todo' | 'safe' | 'diary' | 'notes';
+
+export function getNoteCategory(note: NoteItem): 'todo' | 'safe' | 'diary' | 'notes' {
+  if (note.entryType === 'todo' || !!note.isTodo) return 'todo';
+  if (note.entryType === 'passwords' || !!note.isSafe || !!note.isVault) return 'safe';
+  if (note.entryType === 'diary') return 'diary';
+  return 'notes';
 }

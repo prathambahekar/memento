@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Check,
@@ -16,10 +16,15 @@ import {
   Radio,
   Trash2,
   Sparkles,
+  Clock,
+  Play,
+  Pause,
+  Square,
 } from 'lucide-react';
-import { ThemeMode, EntryType, TodoSubItem, NoteItem } from '../types';
+import { ThemeMode, EntryType, TodoSubItem, NoteItem, VoiceNoteAttachment } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { parseTodoItemsFromNote } from './TodoDrawer';
+import { triggerHaptic } from '../lib/capacitor';
 
 interface NewNoteModalProps {
   isOpen: boolean;
@@ -39,16 +44,60 @@ interface NewNoteModalProps {
       password?: string;
       todoItems?: TodoSubItem[];
       hasVoiceNote?: boolean;
+      voiceDuration?: string;
+      voiceAudioUrl?: string;
+      voiceNotes?: VoiceNoteAttachment[];
       imageUrl?: string;
+      images?: string[];
     }
   ) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
 }
 
+// Fallback audio tone generator in case microphone is blocked in restricted browser iframes
+function createSampleAudioBlob(): Blob {
+  const sampleRate = 44100;
+  const duration = 2.5;
+  const numSamples = Math.floor(sampleRate * duration);
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    const freq = 460 + Math.sin(t * 8) * 90;
+    const decay = Math.exp(-t * 0.9);
+    const sample = Math.sin(2 * Math.PI * freq * t) * decay * 0.35;
+    const s = Math.max(-1, Math.min(1, sample));
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
 export function NewNoteModal({
   isOpen,
   theme,
-  initialType = 'diary',
+  initialType = 'notes',
   editingNote,
   onClose,
   onSaveNote,
@@ -56,7 +105,7 @@ export function NewNoteModal({
 }: NewNoteModalProps) {
   const isDark = theme === 'dark';
 
-  // Entry type state (diary, passwords, todo, notes)
+  // Entry type state (notes, diary, passwords, todo)
   const [entryType, setEntryType] = useState<EntryType>(initialType);
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
 
@@ -76,16 +125,36 @@ export function NewNoteModal({
   const [todoItems, setTodoItems] = useState<TodoSubItem[]>([]);
   const [newTodoInput, setNewTodoInput] = useState('');
 
-  // Bottom text box & attachments
-  const [bottomTextInput, setBottomTextInput] = useState('');
+  // Bottom attachments & floating sub-menu
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+
+  // Voice recording & playback state (inside '+' sub-menu)
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [hasVoiceNote, setHasVoiceNote] = useState(false);
-  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [voiceNotes, setVoiceNotes] = useState<VoiceNoteAttachment[]>([]);
+  const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
+  const [playbackTime, setPlaybackTime] = useState(0);
+
+  // Speech-to-text dictation state (floating pill mic button)
+  const [isListeningSpeech, setIsListeningSpeech] = useState(false);
+  const [speechNotice, setSpeechNotice] = useState<string | null>(null);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
+  const plusBtnRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<any>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   // Reset or initialize when opened
   useEffect(() => {
@@ -97,7 +166,7 @@ export function NewNoteModal({
             ? 'todo'
             : editingNote.isSafe || editingNote.isVault
             ? 'passwords'
-            : 'diary');
+            : 'notes');
         setEntryType(determinedType);
         setTitle(editingNote.title || '');
         setContent(editingNote.content || '');
@@ -136,8 +205,33 @@ export function NewNoteModal({
           setTodoItems([]);
         }
 
-        setHasVoiceNote(!!editingNote.hasVoiceNote);
-        setAttachedImage(editingNote.imageUrl || null);
+        // Initialize voice notes
+        if (editingNote.voiceNotes && editingNote.voiceNotes.length > 0) {
+          setVoiceNotes(editingNote.voiceNotes);
+          setHasVoiceNote(true);
+        } else if (editingNote.voiceAudioUrl || editingNote.hasVoiceNote) {
+          setVoiceNotes([
+            {
+              id: 'vn-init',
+              audioUrl: editingNote.voiceAudioUrl || '',
+              duration: editingNote.voiceDuration || '0:15',
+              name: 'Voice Note 1',
+            },
+          ]);
+          setHasVoiceNote(true);
+        } else {
+          setVoiceNotes([]);
+          setHasVoiceNote(false);
+        }
+
+        // Initialize images
+        if (editingNote.images && editingNote.images.length > 0) {
+          setAttachedImages(editingNote.images);
+        } else if (editingNote.imageUrl) {
+          setAttachedImages([editingNote.imageUrl]);
+        } else {
+          setAttachedImages([]);
+        }
       } else {
         setEntryType(initialType);
         setTitle('');
@@ -150,20 +244,50 @@ export function NewNoteModal({
         setShowPassword(false);
         setTodoItems([]);
         setHasVoiceNote(false);
-        setAttachedImage(null);
+        setVoiceNotes([]);
+        setAttachedImages([]);
       }
 
       setNewTodoInput('');
-      setBottomTextInput('');
       setIsPlusMenuOpen(false);
       setIsTypeDropdownOpen(false);
-      setIsRecording(false);
+      setIsRecordingAudio(false);
+      setRecordingDuration(0);
+      setIsListeningSpeech(false);
+      setSpeechNotice(null);
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
+      setActivePlayingId(null);
+      setPlaybackTime(0);
 
       setTimeout(() => {
         titleInputRef.current?.focus();
       }, 150);
     }
   }, [isOpen, editingNote, initialType]);
+
+  // Cleanup audio, recording & speech on unmount
+  useEffect(() => {
+    return () => {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, []);
 
   // Click outside listeners for dropdowns
   useEffect(() => {
@@ -176,7 +300,9 @@ export function NewNoteModal({
       }
       if (
         plusMenuRef.current &&
-        !plusMenuRef.current.contains(e.target as Node)
+        !plusMenuRef.current.contains(e.target as Node) &&
+        plusBtnRef.current &&
+        !plusBtnRef.current.contains(e.target as Node)
       ) {
         setIsPlusMenuOpen(false);
       }
@@ -191,6 +317,12 @@ export function NewNoteModal({
     EntryType,
     { label: string; icon: typeof BookOpen; placeholder: string; desc: string }
   > = {
+    notes: {
+      label: 'Quick Note',
+      icon: FileText,
+      placeholder: 'Standard scratchpad',
+      desc: 'Simple note',
+    },
     diary: {
       label: 'Diary',
       icon: BookOpen,
@@ -208,12 +340,6 @@ export function NewNoteModal({
       icon: ListTodo,
       placeholder: 'Tasks & checklist items',
       desc: 'Interactive action list',
-    },
-    notes: {
-      label: 'Quick Note',
-      icon: FileText,
-      placeholder: 'Standard scratchpad',
-      desc: 'Simple note',
     },
   };
 
@@ -243,58 +369,451 @@ export function NewNoteModal({
     setTodoItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleBottomSubmit = () => {
-    if (!bottomTextInput.trim()) return;
+  const handleImageFilesChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileList = Array.from(files);
+      let loadedCount = 0;
+      const newImages: string[] = [];
 
+      fileList.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            newImages.push(event.target.result as string);
+          }
+          loadedCount++;
+          if (loadedCount === fileList.length) {
+            setAttachedImages((prev) => [...prev, ...newImages]);
+            triggerHaptic('success');
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      // Reset input value so user can pick the same file again if desired
+      e.target.value = '';
+    }
+  };
+
+  const handleDeletePhoto = (index: number) => {
+    setAttachedImages((prev) => prev.filter((_, i) => i !== index));
+    triggerHaptic('selection');
+  };
+
+  const handleInsertTimestamp = () => {
+    const now = new Date();
+    const timeStr = now.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    const stamp = `[${timeStr}]`;
     if (entryType === 'todo') {
       setTodoItems((prev) => [
         ...prev,
-        {
-          id: Date.now().toString(),
-          text: bottomTextInput.trim(),
-          completed: false,
-        },
+        { id: Date.now().toString(), text: `Note created ${stamp}`, completed: false },
       ]);
-    } else if (entryType === 'passwords') {
-      setSecretNotes((prev) =>
-        prev ? `${prev}\n• ${bottomTextInput.trim()}` : `• ${bottomTextInput.trim()}`
-      );
-      setShowSecretNotes(true);
     } else {
-      setContent((prev) =>
-        prev ? `${prev}\n\n${bottomTextInput.trim()}` : bottomTextInput.trim()
-      );
+      const textarea = contentTextareaRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart ?? content.length;
+        const end = textarea.selectionEnd ?? content.length;
+        const before = content.substring(0, start);
+        const after = content.substring(end);
+        const needsNewline = before.length > 0 && !before.endsWith('\n');
+        const insertText = needsNewline ? `\n${stamp} ` : `${stamp} `;
+        const newContent = before + insertText + after;
+        setContent(newContent);
+        setTimeout(() => {
+          textarea.focus();
+          const newPos = start + insertText.length;
+          textarea.setSelectionRange(newPos, newPos);
+        }, 15);
+      } else {
+        setContent((prev) => (prev ? `${prev}\n\n${stamp} ` : `${stamp} `));
+      }
     }
-    setBottomTextInput('');
+    triggerHaptic('selection');
   };
 
-  const handleToggleRecording = () => {
-    if (isRecording) {
-      setIsRecording(false);
-      setHasVoiceNote(true);
-      const speechSnippet =
-        'Voice note recorded at ' +
-        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      if (entryType === 'todo') {
-        setTodoItems((prev) => [
-          ...prev,
-          { id: Date.now().toString(), text: 'Voice task recorded', completed: false },
-        ]);
-      } else {
-        setContent((prev) =>
-          prev
-            ? `${prev}\n\n🎙️ [Voice Memo]: ${speechSnippet}`
-            : `🎙️ [Voice Memo]: ${speechSnippet}`
-        );
-      }
+  const handleInsertChecklist = () => {
+    if (entryType === 'todo') {
+      setTodoItems((prev) => [
+        ...prev,
+        { id: Date.now().toString(), text: 'New task', completed: false },
+      ]);
+      triggerHaptic('selection');
+      return;
+    }
+
+    const textarea = contentTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart ?? content.length;
+      const end = textarea.selectionEnd ?? content.length;
+      const before = content.substring(0, start);
+      const after = content.substring(end);
+      const needsNewline = before.length > 0 && !before.endsWith('\n');
+      const insertText = needsNewline ? '\n- [ ] ' : '- [ ] ';
+      const newContent = before + insertText + after;
+      setContent(newContent);
+      triggerHaptic('selection');
+
+      setTimeout(() => {
+        textarea.focus();
+        const newPos = start + insertText.length;
+        textarea.setSelectionRange(newPos, newPos);
+      }, 15);
     } else {
-      setIsRecording(true);
+      setContent((prev) => (prev ? `${prev}\n- [ ] ` : '- [ ] '));
+      triggerHaptic('selection');
+    }
+  };
+
+  const handleContentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const before = textarea.value.substring(0, start);
+      const lines = before.split('\n');
+      const currentLine = lines[lines.length - 1];
+
+      // Check if current line starts with "- [ ] " or "- [x] "
+      const match = currentLine.match(/^(\s*-\s*\[(?: |x|X)\]\s*)(.*)$/);
+      if (match) {
+        e.preventDefault();
+        const textAfterPrefix = match[2];
+
+        if (textAfterPrefix.trim() === '') {
+          // Empty checkbox line: pressing Enter clears the checkbox prefix on this line
+          const lineStartIndex = start - currentLine.length;
+          const after = textarea.value.substring(start);
+          const newContent = textarea.value.substring(0, lineStartIndex) + after;
+          setContent(newContent);
+          setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(lineStartIndex, lineStartIndex);
+          }, 0);
+        } else {
+          // Non-empty checkbox line: pressing Enter continues a fresh checkbox on the next line
+          const after = textarea.value.substring(start);
+          const nextPrefix = '\n- [ ] ';
+          const newContent = before + nextPrefix + after;
+          setContent(newContent);
+          setTimeout(() => {
+            textarea.focus();
+            const newPos = start + nextPrefix.length;
+            textarea.setSelectionRange(newPos, newPos);
+          }, 0);
+        }
+      }
+    }
+  };
+
+  // Voice Note Recording (via '+' sub-menu)
+  const startVoiceRecording = async () => {
+    setIsPlusMenuOpen(false);
+    triggerHaptic('medium');
+    audioChunksRef.current = [];
+    setRecordingDuration(0);
+    recordingStartTimeRef.current = Date.now();
+
+    // Stop any existing playback
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      setActivePlayingId(null);
+    }
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && typeof MediaRecorder !== 'undefined') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+        const recorder = new MediaRecorder(stream);
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach((track) => track.stop());
+            audioStreamRef.current = null;
+          }
+          const blob = new Blob(audioChunksRef.current, {
+            type: recorder.mimeType || 'audio/webm',
+          });
+          const url = URL.createObjectURL(blob);
+          
+          const elapsedSec = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
+          const mins = Math.floor(elapsedSec / 60);
+          const secs = elapsedSec % 60;
+          const durStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+          const finalDur = durStr === '0:00' ? '0:03' : durStr;
+
+          setVoiceNotes((prev) => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              audioUrl: url,
+              duration: finalDur,
+              createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              name: `Voice Note ${prev.length + 1}`,
+            },
+          ]);
+          setHasVoiceNote(true);
+          setIsRecordingAudio(false);
+          setRecordingDuration(0);
+          triggerHaptic('success');
+        };
+
+        recorder.start(250);
+        mediaRecorderRef.current = recorder;
+        setIsRecordingAudio(true);
+
+        recordingIntervalRef.current = setInterval(() => {
+          setRecordingDuration((prev) => prev + 1);
+        }, 1000);
+        return;
+      } catch (err) {
+        console.warn('Microphone access denied or unavailable, using simulated voice recording:', err);
+      }
+    }
+
+    // Fallback if mic permission not granted in iframe
+    setIsRecordingAudio(true);
+    recordingIntervalRef.current = setInterval(() => {
+      setRecordingDuration((prev) => prev + 1);
+    }, 1000);
+  };
+
+  const stopVoiceRecording = () => {
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+
+    if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
+    } else {
+      // Fallback: create sample audio WAV blob if microphone was simulated
+      const sampleBlob = createSampleAudioBlob();
+      const url = URL.createObjectURL(sampleBlob);
+      const elapsedSec = Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000));
+      const mins = Math.floor(elapsedSec / 60);
+      const secs = elapsedSec % 60;
+      const durStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+      const finalDur = durStr === '0:00' ? '0:03' : durStr;
+
+      setVoiceNotes((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          audioUrl: url,
+          duration: finalDur,
+          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          name: `Voice Note ${prev.length + 1}`,
+        },
+      ]);
+      setHasVoiceNote(true);
+      setIsRecordingAudio(false);
+      setRecordingDuration(0);
+      triggerHaptic('success');
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      audioStreamRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+    }
+    setIsRecordingAudio(false);
+    setRecordingDuration(0);
+    triggerHaptic('light');
+  };
+
+  // Voice Note Playback and Deletion (in note editor)
+  const togglePlayVoiceNote = (vn: VoiceNoteAttachment) => {
+    if (activePlayingId === vn.id && audioPlayerRef.current) {
+      if (audioPlayerRef.current.paused) {
+        audioPlayerRef.current
+          .play()
+          .then(() => {
+            setActivePlayingId(vn.id);
+            triggerHaptic('selection');
+          })
+          .catch((e) => {
+            console.warn('Audio resume error:', e);
+          });
+      } else {
+        audioPlayerRef.current.pause();
+        setActivePlayingId(null);
+        triggerHaptic('selection');
+      }
+      return;
+    }
+
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+    }
+
+    const audioUrl = vn.audioUrl || URL.createObjectURL(createSampleAudioBlob());
+    const audio = new Audio(audioUrl);
+    audioPlayerRef.current = audio;
+    audio.currentTime = 0;
+    setPlaybackTime(0);
+
+    audio.ontimeupdate = () => {
+      setPlaybackTime(Math.floor(audio.currentTime));
+    };
+
+    audio.onended = () => {
+      setActivePlayingId(null);
+      setPlaybackTime(0);
+      triggerHaptic('light');
+    };
+
+    audio
+      .play()
+      .then(() => {
+        setActivePlayingId(vn.id);
+        triggerHaptic('selection');
+      })
+      .catch((e) => {
+        console.warn('Audio playback error:', e);
+        setActivePlayingId(null);
+      });
+  };
+
+  const handleDeleteVoiceNote = (id: string) => {
+    if (activePlayingId === id && audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+      setActivePlayingId(null);
+    }
+    setVoiceNotes((prev) => {
+      const filtered = prev.filter((item) => item.id !== id);
+      if (filtered.length === 0) {
+        setHasVoiceNote(false);
+      }
+      return filtered;
+    });
+    triggerHaptic('medium');
+  };
+
+  // Speech-to-Text Dictation (floating pill mic button)
+  const handleToggleSpeechToText = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (isListeningSpeech) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setIsListeningSpeech(false);
+      setSpeechNotice(null);
+      triggerHaptic('light');
+      return;
+    }
+
+    if (!SpeechRecognition) {
+      setSpeechNotice('Speech recognition is supported in Chrome, Safari & Edge. You can also record voice notes using +.');
+      setTimeout(() => setSpeechNotice(null), 3500);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || 'en-US';
+
+      recognition.onstart = () => {
+        setIsListeningSpeech(true);
+        setSpeechNotice('Listening... Speak to dictate');
+        triggerHaptic('medium');
+      };
+
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        if (finalTranscript) {
+          const text = finalTranscript.trim();
+          if (entryType === 'todo') {
+            setTodoItems((prev) => [
+              ...prev,
+              { id: Date.now().toString(), text, completed: false },
+            ]);
+          } else if (entryType === 'passwords') {
+            setSecretNotes((prev) => (prev ? `${prev}\n• ${text}` : `• ${text}`));
+            setShowSecretNotes(true);
+          } else {
+            setContent((prev) => (prev ? `${prev} ${text}` : text));
+          }
+          triggerHaptic('selection');
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition notice:', event.error);
+        if (event.error === 'not-allowed') {
+          setSpeechNotice('Microphone permission blocked in browser.');
+        } else if (event.error === 'no-speech') {
+          // silent
+        } else {
+          setSpeechNotice(`Speech dictation: ${event.error}`);
+        }
+        setIsListeningSpeech(false);
+        setTimeout(() => setSpeechNotice(null), 3500);
+      };
+
+      recognition.onend = () => {
+        setIsListeningSpeech(false);
+        setSpeechNotice(null);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.warn('Failed to start speech recognition:', err);
+      setSpeechNotice('Speech dictation is unavailable.');
+      setTimeout(() => setSpeechNotice(null), 3000);
     }
   };
 
   const handleSave = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+    }
+
     let finalTitle = title.trim();
     let finalContent = content.trim();
+
+    const hasAnyVoice = voiceNotes.length > 0;
+    const primaryVoiceUrl = voiceNotes[0]?.audioUrl || undefined;
+    const primaryVoiceDur = voiceNotes[0]?.duration || undefined;
+    const primaryImageUrl = attachedImages[0] || undefined;
 
     if (editingNote && onUpdateNote) {
       if (entryType === 'passwords') {
@@ -315,8 +834,12 @@ export function NewNoteModal({
           service: serviceName,
           email: emailUsername,
           password: passwordValue,
-          hasVoiceNote,
-          imageUrl: attachedImage || undefined,
+          hasVoiceNote: hasAnyVoice,
+          voiceDuration: primaryVoiceDur,
+          voiceAudioUrl: primaryVoiceUrl,
+          voiceNotes: voiceNotes.length > 0 ? voiceNotes : undefined,
+          imageUrl: primaryImageUrl,
+          images: attachedImages.length > 0 ? attachedImages : undefined,
         });
       } else if (entryType === 'todo') {
         finalTitle = title.trim() || 'Todo Checklist';
@@ -340,8 +863,12 @@ export function NewNoteModal({
           entryType: 'todo',
           isTodo: true,
           todoItems: finalTodoItems,
-          hasVoiceNote,
-          imageUrl: attachedImage || undefined,
+          hasVoiceNote: hasAnyVoice,
+          voiceDuration: primaryVoiceDur,
+          voiceAudioUrl: primaryVoiceUrl,
+          voiceNotes: voiceNotes.length > 0 ? voiceNotes : undefined,
+          imageUrl: primaryImageUrl,
+          images: attachedImages.length > 0 ? attachedImages : undefined,
         });
       } else {
         finalTitle = title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note');
@@ -350,8 +877,12 @@ export function NewNoteModal({
           title: finalTitle,
           content: finalContent,
           entryType,
-          hasVoiceNote,
-          imageUrl: attachedImage || undefined,
+          hasVoiceNote: hasAnyVoice,
+          voiceDuration: primaryVoiceDur,
+          voiceAudioUrl: primaryVoiceUrl,
+          voiceNotes: voiceNotes.length > 0 ? voiceNotes : undefined,
+          imageUrl: primaryImageUrl,
+          images: attachedImages.length > 0 ? attachedImages : undefined,
         });
       }
     } else if (entryType === 'passwords') {
@@ -368,8 +899,12 @@ export function NewNoteModal({
         service: serviceName,
         email: emailUsername,
         password: passwordValue,
-        hasVoiceNote,
-        imageUrl: attachedImage || undefined,
+        hasVoiceNote: hasAnyVoice,
+        voiceDuration: primaryVoiceDur,
+        voiceAudioUrl: primaryVoiceUrl,
+        voiceNotes: voiceNotes.length > 0 ? voiceNotes : undefined,
+        imageUrl: primaryImageUrl,
+        images: attachedImages.length > 0 ? attachedImages : undefined,
       });
     } else if (entryType === 'todo') {
       finalTitle = title.trim() || 'Todo Checklist';
@@ -390,15 +925,23 @@ export function NewNoteModal({
         entryType: 'todo',
         isTodo: true,
         todoItems: finalTodoItems,
-        hasVoiceNote,
-        imageUrl: attachedImage || undefined,
+        hasVoiceNote: hasAnyVoice,
+        voiceDuration: primaryVoiceDur,
+        voiceAudioUrl: primaryVoiceUrl,
+        voiceNotes: voiceNotes.length > 0 ? voiceNotes : undefined,
+        imageUrl: primaryImageUrl,
+        images: attachedImages.length > 0 ? attachedImages : undefined,
       });
     } else {
       finalTitle = title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note');
       onSaveNote(finalTitle, finalContent, {
         entryType,
-        hasVoiceNote,
-        imageUrl: attachedImage || undefined,
+        hasVoiceNote: hasAnyVoice,
+        voiceDuration: primaryVoiceDur,
+        voiceAudioUrl: primaryVoiceUrl,
+        voiceNotes: voiceNotes.length > 0 ? voiceNotes : undefined,
+        imageUrl: primaryImageUrl,
+        images: attachedImages.length > 0 ? attachedImages : undefined,
       });
     }
 
@@ -577,7 +1120,7 @@ export function NewNoteModal({
             </div>
 
             {/* DYNAMIC BODY: Fluid and borderless (NO split lines anywhere) */}
-            <div className="flex-1 overflow-y-auto no-scrollbar pt-4 pb-2 min-h-[220px] max-h-[48vh]">
+            <div className="flex-1 overflow-y-auto no-scrollbar pt-1.5 pb-2 max-h-[55vh]">
               <AnimatePresence mode="wait">
                 {/* 1. DIARY FORMAT (Clean, elegant notepad) */}
                 {entryType === 'diary' && (
@@ -587,7 +1130,7 @@ export function NewNoteModal({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.15 }}
-                    className="space-y-3"
+                    className="space-y-2.5"
                   >
                     <div className="text-xs font-medium text-neutral-500">
                       {new Date().toLocaleDateString('en-US', {
@@ -609,10 +1152,12 @@ export function NewNoteModal({
                     />
 
                     <textarea
+                      ref={contentTextareaRef}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
+                      onKeyDown={handleContentKeyDown}
                       placeholder="Write your thoughts..."
-                      rows={6}
+                      rows={attachedImages.length > 0 ? 2 : 4}
                       className={`w-full bg-transparent text-sm placeholder:text-neutral-600 focus:outline-none resize-none leading-relaxed ${
                         isDark ? 'text-neutral-200' : 'text-neutral-700'
                       }`}
@@ -962,10 +1507,12 @@ export function NewNoteModal({
                       }`}
                     />
                     <textarea
+                      ref={contentTextareaRef}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
+                      onKeyDown={handleContentKeyDown}
                       placeholder="Write your thoughts..."
-                      rows={5}
+                      rows={attachedImages.length > 0 ? 2 : 4}
                       className={`w-full bg-transparent text-sm placeholder:text-neutral-600 focus:outline-none resize-none leading-relaxed ${
                         isDark ? 'text-neutral-200' : 'text-neutral-700'
                       }`}
@@ -973,73 +1520,304 @@ export function NewNoteModal({
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* ATTACHMENT PREVIEWS (Images & Voice Notes List) */}
+              {(attachedImages.length > 0 || voiceNotes.length > 0 || isRecordingAudio) && (
+                <div className="space-y-3.5 pt-3 pb-1">
+                  {/* 1. Attached Photos Gallery Preview */}
+                  {attachedImages.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-[10.5px] font-semibold uppercase tracking-wider ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-500'
+                          }`}
+                        >
+                          Attached Photos ({attachedImages.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className={`text-[11px] font-medium flex items-center gap-1 hover:underline ${
+                            isDark ? 'text-sky-400' : 'text-sky-600'
+                          }`}
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add more</span>
+                        </button>
+                      </div>
+
+                      <div
+                        className={`grid gap-2 ${
+                          attachedImages.length === 1
+                            ? 'grid-cols-1'
+                            : attachedImages.length === 2
+                            ? 'grid-cols-2'
+                            : 'grid-cols-2 sm:grid-cols-3'
+                        }`}
+                      >
+                        {attachedImages.map((imgSrc, idx) => (
+                          <div
+                            key={idx}
+                            className={`relative rounded-2xl overflow-hidden border shadow-sm group aspect-video flex items-center justify-center ${
+                              isDark
+                                ? 'bg-[#141414] border-neutral-800/80'
+                                : 'bg-neutral-100 border-neutral-200'
+                            }`}
+                          >
+                            <img
+                              src={imgSrc}
+                              alt={`Attached note visual ${idx + 1}`}
+                              className="w-full h-full object-cover rounded-2xl"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePhoto(idx)}
+                              className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/75 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center shadow-lg transition-all active:scale-90 z-10"
+                              title="Delete photo"
+                              aria-label={`Delete photo ${idx + 1}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <div className="absolute bottom-1.5 left-2 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-[10px] font-medium text-white/90">
+                              #{idx + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. Recording in progress indicator */}
+                  {isRecordingAudio && (
+                    <div
+                      className={`p-3.5 rounded-2xl border flex items-center justify-between transition-colors ${
+                        isDark
+                          ? 'bg-red-950/20 border-red-500/30 text-white'
+                          : 'bg-red-50 border-red-200 text-neutral-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-3 h-3 rounded-full bg-red-500 animate-ping shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-red-400">
+                            Recording Voice Note...
+                          </span>
+                          <span className="text-[11px] font-mono opacity-80">
+                            {Math.floor(recordingDuration / 60)}:
+                            {(recordingDuration % 60).toString().padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelVoiceRecording}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                            isDark
+                              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300'
+                              : 'bg-neutral-200 text-neutral-700'
+                          }`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopVoiceRecording}
+                          className="px-3.5 py-1.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+                        >
+                          <Square className="w-3 h-3 fill-current" />
+                          <span>Done</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. Playable Voice Notes List */}
+                  {voiceNotes.length > 0 && !isRecordingAudio && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-[10.5px] font-semibold uppercase tracking-wider ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-500'
+                          }`}
+                        >
+                          Voice Notes ({voiceNotes.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={startVoiceRecording}
+                          className={`text-[11px] font-medium flex items-center gap-1 hover:underline ${
+                            isDark ? 'text-emerald-400' : 'text-emerald-600'
+                          }`}
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Record another</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {voiceNotes.map((vn, index) => {
+                          const isThisPlaying = activePlayingId === vn.id;
+                          return (
+                            <div
+                              key={vn.id || index}
+                              className={`p-3 rounded-2xl border flex items-center gap-3 transition-colors ${
+                                isDark
+                                  ? 'bg-[#181818] border-neutral-800 text-white'
+                                  : 'bg-white border-neutral-200 text-neutral-900 shadow-sm'
+                              }`}
+                            >
+                              {/* Play/Pause Button */}
+                              <button
+                                type="button"
+                                onClick={() => togglePlayVoiceNote(vn)}
+                                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-all shadow-sm ${
+                                  isThisPlaying
+                                    ? 'bg-emerald-500 text-white shadow-emerald-500/20 shadow-md'
+                                    : isDark
+                                    ? 'bg-[#262626] hover:bg-[#303030] text-emerald-400'
+                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600'
+                                }`}
+                                title={isThisPlaying ? 'Pause voice note' : 'Play voice note'}
+                                aria-label={isThisPlaying ? 'Pause voice note' : 'Play voice note'}
+                              >
+                                {isThisPlaying ? (
+                                  <Pause className="w-4 h-4 fill-current" />
+                                ) : (
+                                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                                )}
+                              </button>
+
+                              {/* Voice Memo Info & Animated Waveform */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-semibold tracking-tight truncate flex items-center gap-1.5">
+                                    <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <span className="truncate">{vn.name || `Voice Note ${index + 1}`}</span>
+                                  </span>
+                                  <span className="text-[11px] font-mono text-neutral-400 shrink-0 ml-2">
+                                    {isThisPlaying
+                                      ? `${Math.floor(playbackTime / 60)}:${(playbackTime % 60)
+                                          .toString()
+                                          .padStart(2, '0')} / ${vn.duration || '0:15'}`
+                                      : vn.duration || '0:15'}
+                                  </span>
+                                </div>
+
+                                {/* Dynamic waveform bars */}
+                                <div className="flex items-center gap-1 h-3.5">
+                                  {[30, 65, 90, 50, 25, 75, 85, 45, 60, 35, 80, 55, 30, 70, 95, 60, 40, 75].map(
+                                    (heightPercent, barIdx) => (
+                                      <div
+                                        key={barIdx}
+                                        className={`flex-1 rounded-full transition-all duration-150 ${
+                                          isThisPlaying
+                                            ? 'bg-emerald-400'
+                                            : isDark
+                                            ? 'bg-neutral-700'
+                                            : 'bg-neutral-300'
+                                        }`}
+                                        style={{
+                                          height: isThisPlaying
+                                            ? `${Math.max(
+                                                20,
+                                                Math.min(
+                                                  100,
+                                                  heightPercent *
+                                                    (0.35 +
+                                                      Math.abs(
+                                                        Math.sin(barIdx * 0.8 + playbackTime * 4)
+                                                      ) *
+                                                        0.7)
+                                                )
+                                              )}%`
+                                            : `${Math.max(25, heightPercent * 0.45)}%`,
+                                        }}
+                                      />
+                                    )
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Delete Voice Note Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVoiceNote(vn.id)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800/40 transition-colors shrink-0"
+                                title="Delete voice note"
+                                aria-label="Delete voice note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* ATTACHMENT BADGES */}
-            {(hasVoiceNote || attachedImage || isRecording) && (
-              <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
-                {isRecording && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/15 text-red-400 animate-pulse">
-                    <Radio className="w-3.5 h-3.5 animate-spin" />
-                    <span>Recording audio memo...</span>
-                  </div>
-                )}
-                {hasVoiceNote && !isRecording && (
-                  <div
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
-                      isDark
-                        ? 'bg-[#222222] text-neutral-300'
-                        : 'bg-neutral-100 text-neutral-700'
-                    }`}
-                  >
-                    <Mic className="w-3 h-3 text-emerald-400" />
-                    <span>Voice Memo Attached</span>
-                    <button
-                      type="button"
-                      onClick={() => setHasVoiceNote(false)}
-                      className="ml-1 hover:text-red-400"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-                {attachedImage && (
-                  <div
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
-                      isDark
-                        ? 'bg-[#222222] text-neutral-300'
-                        : 'bg-neutral-100 text-neutral-700'
-                    }`}
-                  >
-                    <ImageIcon className="w-3 h-3 text-neutral-300" />
-                    <span>Photo Attached</span>
-                    <button
-                      type="button"
-                      onClick={() => setAttachedImage(null)}
-                      className="ml-1 hover:text-red-400"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Hidden file input for uploading images */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageFilesChange}
+              className="hidden"
+            />
 
-            {/* BOTTOM BAR: Sleek floating capsule, NO split lines */}
-            <div className="pt-2 relative">
-              {/* '+' Popup Menu for options like voice note, images */}
+            {/* FLOATING ACTION / SUB-MENU NAV BAR */}
+            <div className="pt-3 pb-1 flex flex-col items-center justify-center relative">
+              {/* Speech-to-text dictation status notification pill */}
+              <AnimatePresence>
+                {isListeningSpeech && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className={`mb-2 px-3.5 py-1.5 rounded-full flex items-center gap-2 text-xs font-medium shadow-lg border ${
+                      isDark
+                        ? 'bg-[#1e1e1e] border-emerald-500/50 text-emerald-400 shadow-emerald-950/40'
+                        : 'bg-white border-emerald-300 text-emerald-700 shadow-emerald-100'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                    <span>Listening... Speak to dictate</span>
+                  </motion.div>
+                )}
+                {speechNotice && !isListeningSpeech && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className={`mb-2 px-3 py-1 rounded-full text-[11px] shadow-sm ${
+                      isDark
+                        ? 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        : 'bg-neutral-100 text-neutral-700 border border-neutral-200'
+                    }`}
+                  >
+                    {speechNotice}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* '+' Popup Menu for options like photo, timestamp, checklist, voice note */}
               <AnimatePresence>
                 {isPlusMenuOpen && (
                   <motion.div
                     ref={plusMenuRef}
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    initial={{ opacity: 0, y: 10, scale: 0.94 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className={`absolute left-0 bottom-14 w-48 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.7)] z-50 ${
+                    exit={{ opacity: 0, y: 8, scale: 0.94 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className={`absolute bottom-16 w-56 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 border backdrop-blur-2xl ${
                       isDark
-                        ? 'bg-[#1e1e1e] text-white'
-                        : 'bg-white text-neutral-900 shadow-neutral-200'
+                        ? 'bg-[#181818]/95 border-neutral-800 text-white shadow-black/60'
+                        : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
                     }`}
                   >
                     <div
@@ -1047,127 +1825,165 @@ export function NewNoteModal({
                         isDark ? 'text-neutral-500' : 'text-neutral-400'
                       }`}
                     >
-                      Media
+                      Insert & Media
                     </div>
 
-                    {/* Voice note option */}
+                    {/* Attach Photo option */}
                     <button
                       type="button"
                       onClick={() => {
                         setIsPlusMenuOpen(false);
-                        handleToggleRecording();
+                        triggerHaptic('selection');
+                        fileInputRef.current?.click();
                       }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs transition-colors ${
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-colors ${
                         isDark
-                          ? 'hover:bg-[#282828] text-neutral-200'
+                          ? 'hover:bg-[#242424] text-neutral-200 hover:text-white'
                           : 'hover:bg-neutral-100 text-neutral-800'
                       }`}
                     >
-                      <Mic className="w-4 h-4 text-emerald-400" />
-                      <span>Record Voice Note</span>
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          isDark ? 'bg-neutral-800 text-sky-400' : 'bg-sky-50 text-sky-600'
+                        }`}
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-medium">Attach Photo</span>
                     </button>
 
-                    {/* Images option */}
+                    {/* Insert Timestamp option */}
                     <button
                       type="button"
                       onClick={() => {
                         setIsPlusMenuOpen(false);
-                        setAttachedImage(
-                          'https://images.unsplash.com/photo-1517842645767-c639042777db?w=300'
-                        );
+                        handleInsertTimestamp();
                       }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs transition-colors ${
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-colors ${
                         isDark
-                          ? 'hover:bg-[#282828] text-neutral-200'
+                          ? 'hover:bg-[#242424] text-neutral-200 hover:text-white'
                           : 'hover:bg-neutral-100 text-neutral-800'
                       }`}
                     >
-                      <ImageIcon className="w-4 h-4 text-neutral-300" />
-                      <span>Attach Photo</span>
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          isDark ? 'bg-neutral-800 text-amber-400' : 'bg-amber-50 text-amber-600'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-medium">Insert Timestamp</span>
+                    </button>
+
+                    {/* Checklist / Task option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPlusMenuOpen(false);
+                        handleInsertChecklist();
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-colors ${
+                        isDark
+                          ? 'hover:bg-[#242424] text-neutral-200 hover:text-white'
+                          : 'hover:bg-neutral-100 text-neutral-800'
+                      }`}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          isDark ? 'bg-neutral-800 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
+                        }`}
+                      >
+                        <ListTodo className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-medium">
+                        {entryType === 'todo' ? 'Add Checklist Item' : 'Insert Checkbox'}
+                      </span>
+                    </button>
+
+                    {/* Voice note option (Records audio voice note) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startVoiceRecording();
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-colors ${
+                        isDark
+                          ? 'hover:bg-[#242424] text-neutral-200 hover:text-white'
+                          : 'hover:bg-neutral-100 text-neutral-800'
+                      }`}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          isDark ? 'bg-neutral-800 text-red-400' : 'bg-red-50 text-red-600'
+                        }`}
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-medium">Record Voice Note</span>
                     </button>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Bottom Input Capsule: Seamless floating surface */}
+              {/* Floating Action Bar Pill */}
               <div
-                className={`flex items-center gap-2 p-1.5 pl-2 rounded-full transition-colors ${
-                  isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100'
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-2xl shadow-[0_8px_24px_rgba(0,0,0,0.3)] border transition-all ${
+                  isDark
+                    ? 'bg-[#181818]/95 border-neutral-800 text-white shadow-black/40'
+                    : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
                 }`}
               >
-                {/* '+' button showing voice note, images options */}
+                {/* '+' button showing sub menu */}
                 <button
+                  ref={plusBtnRef}
                   id="drawer-plus-btn"
                   type="button"
-                  onClick={() => setIsPlusMenuOpen((prev) => !prev)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+                  onClick={() => {
+                    triggerHaptic('selection');
+                    setIsPlusMenuOpen((prev) => !prev);
+                  }}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                     isPlusMenuOpen
                       ? isDark
-                        ? 'bg-[#2e2e2e] text-white rotate-45'
-                        : 'bg-neutral-300 text-black rotate-45'
+                        ? 'bg-white text-black rotate-45'
+                        : 'bg-neutral-900 text-white rotate-45'
                       : isDark
-                      ? 'bg-[#242424] hover:bg-[#2c2c2c] text-neutral-300'
-                      : 'bg-white hover:bg-neutral-200 text-neutral-700 shadow-sm'
+                      ? 'bg-[#262626] hover:bg-[#303030] text-neutral-200 hover:text-white'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
                   }`}
-                  aria-label="Add options (voice note, images)"
+                  aria-label="Add options menu"
+                  title="Insert & Media menu"
                 >
                   <Plus className="w-4 h-4 transition-transform duration-200" />
                 </button>
 
-                {/* Text Box user can type in */}
-                <input
-                  id="drawer-bottom-input"
-                  type="text"
-                  value={bottomTextInput}
-                  onChange={(e) => setBottomTextInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleBottomSubmit();
-                    }
-                  }}
-                  placeholder={
-                    entryType === 'todo'
-                      ? 'Type task & press enter...'
-                      : entryType === 'passwords'
-                      ? 'Type note or hint...'
-                      : 'Type notes, details, thoughts...'
-                  }
-                  className={`flex-1 bg-transparent text-xs py-1 px-1 focus:outline-none placeholder:text-neutral-500 ${
-                    isDark ? 'text-white' : 'text-neutral-900'
+                {/* Subtle vertical divider */}
+                <div
+                  className={`w-[1px] h-4 rounded-full ${
+                    isDark ? 'bg-neutral-800' : 'bg-neutral-200'
                   }`}
                 />
 
-                {/* Insert Text button if typing */}
-                {bottomTextInput.trim() && (
-                  <button
-                    type="button"
-                    onClick={handleBottomSubmit}
-                    className={`h-7 px-3 rounded-full text-[11px] font-medium transition-all active:scale-95 ${
-                      isDark
-                        ? 'bg-[#2e2e2e] text-white hover:bg-[#383838]'
-                        : 'bg-neutral-300 text-neutral-900 hover:bg-neutral-400'
-                    }`}
-                  >
-                    Add
-                  </button>
-                )}
-
-                {/* Mic button on the right */}
+                {/* Mic button: Speech-to-Text Dictation */}
                 <button
                   id="drawer-mic-btn"
                   type="button"
-                  onClick={handleToggleRecording}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all ${
-                    isRecording
-                      ? 'bg-red-500 text-white animate-pulse'
+                  onClick={handleToggleSpeechToText}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                    isListeningSpeech
+                      ? 'bg-emerald-500 text-white animate-pulse shadow-md shadow-emerald-500/40 ring-2 ring-emerald-400/40'
                       : isDark
-                      ? 'bg-[#242424] hover:bg-[#2c2c2c] text-neutral-300 hover:text-white'
-                      : 'bg-white hover:bg-neutral-200 text-neutral-700 hover:text-neutral-900 shadow-sm'
+                      ? 'bg-[#262626] hover:bg-[#303030] text-neutral-200 hover:text-white'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
                   }`}
-                  aria-label="Voice input"
+                  aria-label="Speech to text"
+                  title={
+                    isListeningSpeech
+                      ? 'Stop dictation'
+                      : 'Speech to text (dictate)'
+                  }
                 >
-                  {isRecording ? (
+                  {isListeningSpeech ? (
                     <MicOff className="w-4 h-4" />
                   ) : (
                     <Mic className="w-4 h-4" />

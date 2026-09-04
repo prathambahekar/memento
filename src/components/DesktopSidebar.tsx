@@ -234,39 +234,6 @@ export function DesktopSidebar({
           </div>
         )}
 
-        {/* Primary Action: + Add */}
-        <div className={isCollapsed ? 'px-2.5 py-3 flex justify-center' : 'px-5 py-3'}>
-          {isCollapsed ? (
-            <button
-              id="desktop-new-note-collapsed-btn"
-              type="button"
-              onClick={onOpenNewNote}
-              title="Add (N)"
-              className={`w-10 h-10 rounded-2xl flex items-center justify-center font-semibold transition-all duration-150 active:scale-95 shadow-sm ${
-                isDark
-                  ? 'bg-white text-black hover:bg-neutral-200'
-                  : 'bg-neutral-900 text-white hover:bg-black'
-              }`}
-            >
-              <Plus className="w-5 h-5 stroke-[2.5]" />
-            </button>
-          ) : (
-            <button
-              id="desktop-new-note-btn"
-              type="button"
-              onClick={onOpenNewNote}
-              className={`w-full py-3 px-4 rounded-2xl flex items-center gap-2 font-semibold text-xs transition-all duration-150 active:scale-[0.98] shadow-sm ${
-                isDark
-                  ? 'bg-white text-black hover:bg-neutral-200'
-                  : 'bg-neutral-900 text-white hover:bg-black'
-              }`}
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Add</span>
-            </button>
-          )}
-        </div>
-
         {/* Navigation Sections */}
         <div className={`flex-1 overflow-y-auto no-scrollbar space-y-5 ${isCollapsed ? 'px-2' : 'px-3 py-2'}`}>
           {/* Main Categories (all items from the nav bar) */}
@@ -309,8 +276,39 @@ export function DesktopSidebar({
           </div>
         </div>
 
-        {/* Footer: Theme Toggle */}
-        <div className={`mt-auto p-3.5 transition-colors ${isCollapsed ? 'flex flex-col items-center gap-2.5' : 'space-y-3'}`}>
+        {/* Footer: Add Button & Theme Toggle */}
+        <div className={`mt-auto p-3 transition-colors ${isCollapsed ? 'flex flex-col items-center gap-2.5' : 'space-y-2.5'}`}>
+          {/* Primary Action: + Add (at bottom above theme) */}
+          {isCollapsed ? (
+            <button
+              id="desktop-new-note-collapsed-btn"
+              type="button"
+              onClick={onOpenNewNote}
+              title="Add (N)"
+              className={`w-9 h-9 rounded-xl flex items-center justify-center font-medium transition-all duration-150 active:scale-95 shadow-xs ${
+                isDark
+                  ? 'bg-white text-black hover:bg-neutral-200'
+                  : 'bg-neutral-900 text-white hover:bg-black'
+              }`}
+            >
+              <Plus className="w-4 h-4 stroke-[2.2]" />
+            </button>
+          ) : (
+            <button
+              id="desktop-new-note-btn"
+              type="button"
+              onClick={onOpenNewNote}
+              className={`w-full h-9 px-3 rounded-xl flex items-center justify-center gap-2 font-medium text-xs transition-all duration-150 active:scale-[0.98] shadow-xs ${
+                isDark
+                  ? 'bg-white text-black hover:bg-neutral-200'
+                  : 'bg-neutral-900 text-white hover:bg-black'
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.2]" />
+              <span>Add</span>
+            </button>
+          )}
+
           {/* Theme Toggle */}
           {isCollapsed ? (
             <button

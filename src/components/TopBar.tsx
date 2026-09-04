@@ -90,7 +90,7 @@ export function TopBar({
             }`}
           />
 
-          {searchQuery ? (
+          {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange?.('')}
@@ -102,16 +102,6 @@ export function TopBar({
             >
               <X className="w-4 h-4" />
             </button>
-          ) : (
-            <kbd
-              className={`hidden lg:inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-md border select-none shrink-0 ${
-                isDark
-                  ? 'border-neutral-700/60 bg-neutral-800/50 text-neutral-400'
-                  : 'border-neutral-300/80 bg-neutral-200/60 text-neutral-500'
-              }`}
-            >
-              ⌘K
-            </kbd>
           )}
         </div>
       </div>

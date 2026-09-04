@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, X, Clock, FileText, Sparkles, Plus, KeyRound } from 'lucide-react';
-import { ThemeMode } from '../types';
+import { ThemeMode, CategoryFilter, getNoteCategory } from '../types';
 import { NoteItem } from './EmptyBody';
 import { useIsDesktop } from '../hooks/useIsDesktop';
+import { triggerHaptic } from '../lib/capacitor';
 
 interface SearchDrawerProps {
   isOpen: boolean;
@@ -14,6 +15,14 @@ interface SearchDrawerProps {
   onCreateWithTitle: (title: string) => void;
 }
 
+const CATEGORY_CHIPS: { id: CategoryFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'todo', label: 'Todo' },
+  { id: 'safe', label: 'Safe' },
+  { id: 'diary', label: 'Diary' },
+  { id: 'notes', label: 'Notes' },
+];
+
 export function SearchDrawer({
   isOpen,
   theme,
@@ -23,7 +32,7 @@ export function SearchDrawer({
   onCreateWithTitle,
 }: SearchDrawerProps) {
   const [query, setQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'favorites' | 'recent'>('all');
+  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
   const inputRef = useRef<HTMLInputElement>(null);
   const isDark = theme === 'dark';
 
@@ -32,6 +41,7 @@ export function SearchDrawer({
   useEffect(() => {
     if (isOpen) {
       setQuery('');
+      setActiveCategory('all');
       setTimeout(() => {
         inputRef.current?.focus();
       }, 150);
@@ -39,10 +49,17 @@ export function SearchDrawer({
   }, [isOpen]);
 
   const filteredNotes = notes.filter((n) => {
-    if (activeFilter === 'favorites' && !n.isFavorite) return false;
+    if (activeCategory !== 'all') {
+      const cat = getNoteCategory(n);
+      if (cat !== activeCategory) return false;
+    }
     if (!query.trim()) return true;
     const q = query.toLowerCase();
-    return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+    return (
+      n.title.toLowerCase().includes(q) ||
+      n.content.toLowerCase().includes(q) ||
+      (n.email && n.email.toLowerCase().includes(q))
+    );
   });
 
   const handleSelect = (note: NoteItem) => {
@@ -157,32 +174,30 @@ export function SearchDrawer({
               )}
             </div>
 
-            {/* Filter Pills */}
+            {/* Filter Chips: all, todo, safe, diary, notes */}
             <div className="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar py-0.5">
-              {(
-                [
-                  { id: 'all', label: 'All Notes' },
-                  { id: 'favorites', label: 'Favorites' },
-                  { id: 'recent', label: 'Recent' },
-                ] as const
-              ).map((tab) => {
-                const isActive = activeFilter === tab.id;
+              {CATEGORY_CHIPS.map((chip) => {
+                const isActive = activeCategory === chip.id;
                 return (
                   <button
-                    key={tab.id}
+                    key={chip.id}
+                    id={`search-chip-${chip.id}`}
                     type="button"
-                    onClick={() => setActiveFilter(tab.id)}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setActiveCategory(chip.id);
+                    }}
                     className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap active:scale-95 transition-all ${
                       isActive
                         ? isDark
-                          ? 'bg-white text-black'
-                          : 'bg-neutral-900 text-white'
+                          ? 'bg-white text-black font-semibold shadow-xs'
+                          : 'bg-neutral-900 text-white font-semibold shadow-xs'
                         : isDark
-                        ? 'bg-[#1a1a1a] text-neutral-400 hover:text-neutral-200'
-                        : 'bg-[#f2f3f6] text-neutral-600 hover:text-neutral-900'
+                        ? 'bg-[#181818] text-neutral-400 hover:text-neutral-200 border border-[#262626]'
+                        : 'bg-[#f2f3f6] text-neutral-600 hover:text-neutral-900 border border-neutral-200/80'
                     }`}
                   >
-                    {tab.label}
+                    {chip.label}
                   </button>
                 );
               })}
@@ -249,6 +264,15 @@ export function SearchDrawer({
                           >
                             {note.content}
                           </p>
+                        )}
+                        {!isPassKey && (note.images?.[0] || note.imageUrl) && (
+                          <div className="mt-2 rounded-xl overflow-hidden max-h-32 w-full bg-neutral-100 dark:bg-neutral-800">
+                            <img
+                              src={note.images?.[0] || note.imageUrl}
+                              alt=""
+                              className="w-full h-32 object-cover rounded-xl"
+                            />
+                          </div>
                         )}
                       </div>
                     );

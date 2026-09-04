@@ -11,7 +11,7 @@ import { TodoDrawer, parseTodoItemsFromNote } from './components/TodoDrawer';
 import { DiaryDrawer } from './components/DiaryDrawer';
 import { DataDrawer } from './components/DataDrawer';
 import { DesktopSidebar } from './components/DesktopSidebar';
-import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem } from './types';
+import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem, VoiceNoteAttachment } from './types';
 import {
   updateNativeStatusBar,
   registerNativeBackButton,
@@ -178,7 +178,11 @@ export default function App() {
       password?: string;
       todoItems?: TodoSubItem[];
       hasVoiceNote?: boolean;
+      voiceDuration?: string;
+      voiceAudioUrl?: string;
+      voiceNotes?: VoiceNoteAttachment[];
       imageUrl?: string;
+      images?: string[];
     }
   ) => {
     const isTodo = extra?.isTodo ?? (activeTab === 'todo');
@@ -196,13 +200,19 @@ export default function App() {
       isTodo,
       isVault: isSafe,
       isSafe,
-      entryType: extra?.entryType ?? (isTodo ? 'todo' : isSafe ? 'passwords' : 'diary'),
+      entryType:
+        extra?.entryType ??
+        (isTodo ? 'todo' : isSafe ? 'passwords' : activeTab === 'diary' ? 'diary' : 'notes'),
       email: extra?.email,
       service: extra?.service,
       password: extra?.password,
       todoItems: extra?.todoItems,
       hasVoiceNote: extra?.hasVoiceNote,
+      voiceDuration: extra?.voiceDuration,
+      voiceAudioUrl: extra?.voiceAudioUrl,
+      voiceNotes: extra?.voiceNotes,
       imageUrl: extra?.imageUrl,
+      images: extra?.images,
     };
     triggerHaptic('success');
     setNotes((prev) => [newNote, ...prev]);
@@ -278,6 +288,20 @@ export default function App() {
     );
   };
 
+  const handleEditNote = (note: NoteItem) => {
+    triggerHaptic('light');
+    setEditingNote(note);
+    setIsNewNoteOpen(true);
+  };
+
+  const handleDeleteNote = (id: string) => {
+    triggerHaptic('medium');
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+    if (selectedTodoNote?.id === id) setSelectedTodoNote(null);
+    if (selectedPassKeyNote?.id === id) setSelectedPassKeyNote(null);
+    if (selectedDiaryNote?.id === id) setSelectedDiaryNote(null);
+  };
+
   const isDark = theme === 'dark';
 
   return (
@@ -344,6 +368,14 @@ export default function App() {
                 onOpenNewNote={handleOpenNewNote}
                 onSelectNote={handleSelectNote}
                 onToggleTodoItem={handleToggleTodoItem}
+                onEditNote={handleEditNote}
+                onDeleteNote={handleDeleteNote}
+                onToggleFavorite={handleToggleFavorite}
+                onUpdateNote={(updated) => {
+                  setNotes((prev) =>
+                    prev.map((n) => (n.id === updated.id ? updated : n))
+                  );
+                }}
               />
             </>
           )}
@@ -397,12 +429,14 @@ export default function App() {
                   ? 'todo'
                   : editingNote.isSafe || editingNote.isVault
                   ? 'passwords'
-                  : 'diary')
+                  : 'notes')
               : activeTab === 'todo'
               ? 'todo'
               : activeTab === 'vault' || activeTab === 'safe'
               ? 'passwords'
-              : 'diary'
+              : activeTab === 'diary'
+              ? 'diary'
+              : 'notes'
           }
           onClose={() => {
             setIsNewNoteOpen(false);
@@ -479,6 +513,12 @@ export default function App() {
             setSelectedDiaryNote((prev) =>
               prev && prev.id === id ? { ...prev, isFavorite: !prev.isFavorite } : prev
             );
+          }}
+          onUpdateNote={(updated) => {
+            setNotes((prev) =>
+              prev.map((n) => (n.id === updated.id ? updated : n))
+            );
+            setSelectedDiaryNote(updated);
           }}
         />
 
