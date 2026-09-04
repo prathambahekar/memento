@@ -1,0 +1,6 @@
+{
+  "name": "memento",
+  "description": "A clean, mobile-first note taking app base with a dark minimalist theme.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
