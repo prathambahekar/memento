@@ -7,7 +7,16 @@ import { SearchDrawer } from './components/SearchDrawer';
 import { NewNoteModal } from './components/NewNoteModal';
 import { SettingsPage } from './components/SettingsPage';
 import { PassKeyDrawer } from './components/PassKeyDrawer';
+import { TodoDrawer, parseTodoItemsFromNote } from './components/TodoDrawer';
+import { DiaryDrawer } from './components/DiaryDrawer';
+import { DataDrawer } from './components/DataDrawer';
+import { DesktopSidebar } from './components/DesktopSidebar';
 import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem } from './types';
+import {
+  updateNativeStatusBar,
+  registerNativeBackButton,
+  triggerHaptic,
+} from './lib/capacitor';
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -18,11 +27,41 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<'main' | 'settings'>('main');
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDataDrawerOpen, setIsDataDrawerOpen] = useState(false);
   const [isSearchDrawerOpen, setIsSearchDrawerOpen] = useState(false);
   const [isNewNoteOpen, setIsNewNoteOpen] = useState(false);
   const [selectedPassKeyNote, setSelectedPassKeyNote] = useState<NoteItem | null>(null);
+  const [selectedTodoNote, setSelectedTodoNote] = useState<NoteItem | null>(null);
+  const [selectedDiaryNote, setSelectedDiaryNote] = useState<NoteItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('memento_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('memento_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  const [notes, setNotes] = useState<NoteItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('memento_notes');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('memento_notes', JSON.stringify(notes));
+    } catch {
+      // ignore storage quota / parsing errors
+    }
+  }, [notes]);
 
   useEffect(() => {
     localStorage.setItem('memento_theme', theme);
@@ -35,11 +74,91 @@ export default function App() {
       document.body.style.backgroundColor = '#f4f4f6';
       document.body.style.color = '#18181b';
     }
+    updateNativeStatusBar(theme === 'dark');
   }, [theme]);
 
   const toggleTheme = () => {
+    triggerHaptic('light');
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
+
+  // Capacitor native Android hardware back button handler
+  useEffect(() => {
+    const unregister = registerNativeBackButton(() => {
+      if (isNewNoteOpen) {
+        setIsNewNoteOpen(false);
+        return true;
+      }
+      if (selectedPassKeyNote) {
+        setSelectedPassKeyNote(null);
+        return true;
+      }
+      if (selectedTodoNote) {
+        setSelectedTodoNote(null);
+        return true;
+      }
+      if (selectedDiaryNote) {
+        setSelectedDiaryNote(null);
+        return true;
+      }
+      if (isSearchDrawerOpen) {
+        setIsSearchDrawerOpen(false);
+        return true;
+      }
+      if (isDataDrawerOpen) {
+        setIsDataDrawerOpen(false);
+        return true;
+      }
+      if (isDrawerOpen) {
+        setIsDrawerOpen(false);
+        return true;
+      }
+      if (currentPage === 'settings') {
+        setCurrentPage('main');
+        return true;
+      }
+      return false;
+    });
+
+    return () => unregister();
+  }, [
+    isNewNoteOpen,
+    selectedPassKeyNote,
+    selectedTodoNote,
+    selectedDiaryNote,
+    isSearchDrawerOpen,
+    isDataDrawerOpen,
+    isDrawerOpen,
+    currentPage,
+  ]);
+
+  // Desktop keyboard shortcuts (⌘K or / for Search, N for New Note)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') || e.key === '/') {
+        e.preventDefault();
+        setIsSearchDrawerOpen(true);
+      } else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setIsNewNoteOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleSaveNote = (
     title: string,
@@ -79,14 +198,23 @@ export default function App() {
       hasVoiceNote: extra?.hasVoiceNote,
       imageUrl: extra?.imageUrl,
     };
+    triggerHaptic('success');
     setNotes((prev) => [newNote, ...prev]);
   };
 
   const handleDrawerSelect = (itemId: string) => {
     if (itemId === 'settings') {
       setCurrentPage('settings');
+    } else if (itemId === 'data') {
+      setIsDataDrawerOpen(true);
     } else if (itemId === 'favorites') {
       setActiveTab('favorites');
+      setCurrentPage('main');
+    } else if (itemId === 'diary') {
+      setActiveTab('diary');
+      setCurrentPage('main');
+    } else if (itemId === 'archive') {
+      setActiveTab('archive');
       setCurrentPage('main');
     } else if (itemId === 'todo') {
       setActiveTab('todo');
@@ -103,7 +231,45 @@ export default function App() {
   const handleSelectNote = (note: NoteItem) => {
     if (note.entryType === 'passwords' || note.isSafe || note.isVault) {
       setSelectedPassKeyNote(note);
+    } else if (note.entryType === 'todo' || note.isTodo) {
+      setSelectedTodoNote(note);
+    } else {
+      setSelectedDiaryNote(note);
     }
+  };
+
+  const handleToggleTodoItem = (noteId: string, itemId: string) => {
+    triggerHaptic('light');
+    setNotes((prevNotes) =>
+      prevNotes.map((note) => {
+        if (note.id !== noteId) return note;
+        const currentItems = parseTodoItemsFromNote(note);
+        const updatedItems = currentItems.map((item) =>
+          item.id === itemId ? { ...item, completed: !item.completed } : item
+        );
+        const updatedContent = updatedItems
+          .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.text}`)
+          .join('\n');
+        const updatedNote: NoteItem = {
+          ...note,
+          todoItems: updatedItems,
+          content: updatedContent,
+          isTodo: true,
+          entryType: 'todo',
+        };
+        if (selectedTodoNote?.id === noteId) {
+          setSelectedTodoNote(updatedNote);
+        }
+        return updatedNote;
+      })
+    );
+  };
+
+  const handleToggleFavorite = (id: string) => {
+    triggerHaptic('light');
+    setNotes((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isFavorite: !n.isFavorite } : n))
+    );
   };
 
   const isDark = theme === 'dark';
@@ -114,51 +280,81 @@ export default function App() {
         isDark ? 'bg-[#000000] text-[#f4f4f5]' : 'bg-[#e8e9ed] text-[#18181b]'
       }`}
     >
-      {/* Mobile-first centered container */}
+      {/* Responsive Workspace: mobile frame on phone screens, full-width desktop workstation on larger screens */}
       <div
-        className={`w-full max-w-md h-dvh flex flex-col relative overflow-hidden shadow-2xl transition-colors duration-200 ${
+        className={`w-full max-w-md md:max-w-none md:w-full h-dvh flex flex-col md:flex-row relative overflow-hidden transition-colors duration-200 ${
           isDark ? 'bg-[#0a0a0a]' : 'bg-[#f8f9fa]'
         }`}
       >
-        {currentPage === 'settings' ? (
-          <SettingsPage
-            theme={theme}
-            notes={notes}
-            onBack={() => setCurrentPage('main')}
-            onToggleTheme={toggleTheme}
-            onClearAllNotes={() => setNotes([])}
-          />
-        ) : (
-          <>
-            {/* Top Bar: 'memento' at left, Search button at right */}
-            <TopBar
-              theme={theme}
-              onOpenSearch={() => setIsSearchDrawerOpen(true)}
-            />
+        {/* Desktop Sidebar: automatically hidden on mobile, visible on desktop (md+) */}
+        <DesktopSidebar
+          activeTab={activeTab}
+          currentPage={currentPage}
+          theme={theme}
+          notes={notes}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            setCurrentPage('main');
+          }}
+          onOpenNewNote={() => setIsNewNoteOpen(true)}
+          onOpenSearch={() => setIsSearchDrawerOpen(true)}
+          onOpenData={() => setIsDataDrawerOpen(true)}
+          onOpenSettings={() => setCurrentPage('settings')}
+          onToggleTheme={toggleTheme}
+        />
 
-            {/* Empty Body: clean, simple, beautiful, zero splitting lines */}
-            <EmptyBody
-              activeTab={activeTab}
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+          {currentPage === 'settings' ? (
+            <SettingsPage
               theme={theme}
               notes={notes}
-              searchQuery={searchQuery}
-              onOpenNewNote={() => setIsNewNoteOpen(true)}
-              onSelectNote={handleSelectNote}
+              onBack={() => setCurrentPage('main')}
+              onToggleTheme={toggleTheme}
+              onClearAllNotes={() => setNotes([])}
+              onImportNotes={(imported) => setNotes(imported)}
             />
+          ) : (
+            <>
+              {/* Top Bar: 'memento' on mobile, Section title + Search & Note buttons on desktop */}
+              <TopBar
+                theme={theme}
+                activeTab={activeTab}
+                isSidebarCollapsed={isSidebarCollapsed}
+                onToggleSidebar={toggleSidebar}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onOpenSearch={() => setIsSearchDrawerOpen(true)}
+                onOpenNewNote={() => setIsNewNoteOpen(true)}
+              />
 
-            {/* Bottom Nav Bar: 5 buttons (Home, Notes, + at center, Favorites, More at rightmost) */}
-            <NavBar
-              activeTab={activeTab}
-              theme={theme}
-              onSelectTab={(tab) => {
-                setActiveTab(tab);
-                setCurrentPage('main');
-              }}
-              onOpenNewNote={() => setIsNewNoteOpen(true)}
-              onOpenDrawer={() => setIsDrawerOpen(true)}
-            />
-          </>
-        )}
+              {/* Empty Body: responsive notes grid on desktop, single column on mobile */}
+              <EmptyBody
+                activeTab={activeTab}
+                theme={theme}
+                notes={notes}
+                searchQuery={searchQuery}
+                onOpenNewNote={() => setIsNewNoteOpen(true)}
+                onSelectNote={handleSelectNote}
+                onToggleTodoItem={handleToggleTodoItem}
+              />
+
+              {/* Bottom Nav Bar: auto-hidden on desktop (md:hidden) */}
+              <NavBar
+                activeTab={activeTab}
+                theme={theme}
+                onSelectTab={(tab) => {
+                  setActiveTab(tab);
+                  setCurrentPage('main');
+                }}
+                onOpenNewNote={() => setIsNewNoteOpen(true)}
+                onOpenDrawer={() => setIsDrawerOpen(true)}
+              />
+            </>
+          )}
+        </div>
 
         {/* Search Drawer opened by top-bar Search button */}
         <SearchDrawer
@@ -208,6 +404,52 @@ export default function App() {
             setNotes((prev) => prev.filter((n) => n.id !== id));
             setSelectedPassKeyNote(null);
           }}
+        />
+
+        {/* Todo Detail Drawer Menu */}
+        <TodoDrawer
+          isOpen={!!selectedTodoNote}
+          theme={theme}
+          note={selectedTodoNote}
+          onClose={() => setSelectedTodoNote(null)}
+          onUpdateNote={(updated) => {
+            setNotes((prev) =>
+              prev.map((n) => (n.id === updated.id ? updated : n))
+            );
+            setSelectedTodoNote(updated);
+          }}
+          onDelete={(id) => {
+            setNotes((prev) => prev.filter((n) => n.id !== id));
+            setSelectedTodoNote(null);
+          }}
+        />
+
+        {/* Diary / Note Detail Drawer Menu */}
+        <DiaryDrawer
+          isOpen={!!selectedDiaryNote}
+          theme={theme}
+          note={selectedDiaryNote}
+          onClose={() => setSelectedDiaryNote(null)}
+          onDelete={(id) => {
+            setNotes((prev) => prev.filter((n) => n.id !== id));
+            setSelectedDiaryNote(null);
+          }}
+          onToggleFavorite={(id) => {
+            handleToggleFavorite(id);
+            setSelectedDiaryNote((prev) =>
+              prev && prev.id === id ? { ...prev, isFavorite: !prev.isFavorite } : prev
+            );
+          }}
+        />
+
+        {/* Data Drawer opened directly or from Drawer menu */}
+        <DataDrawer
+          isOpen={isDataDrawerOpen}
+          theme={theme}
+          notes={notes}
+          onClose={() => setIsDataDrawerOpen(false)}
+          onClearAllNotes={() => setNotes([])}
+          onImportNotes={(imported) => setNotes(imported)}
         />
       </div>
     </div>

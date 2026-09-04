@@ -18,6 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ThemeMode, EntryType, TodoSubItem } from '../types';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 interface NewNoteModalProps {
   isOpen: boolean;
@@ -92,9 +93,7 @@ export function NewNoteModal({
       setSecretNotes('');
       setShowSecretNotes(false);
       setShowPassword(false);
-      setTodoItems([
-        { id: '1', text: 'First task to complete', completed: false },
-      ]);
+      setTodoItems([]);
       setNewTodoInput('');
       setBottomTextInput('');
       setIsPlusMenuOpen(false);
@@ -259,7 +258,15 @@ export function NewNoteModal({
       });
     } else if (entryType === 'todo') {
       finalTitle = title.trim() || 'Todo Checklist';
-      const itemsList = todoItems
+      const finalTodoItems = [...todoItems];
+      if (newTodoInput.trim()) {
+        finalTodoItems.push({
+          id: Date.now().toString(),
+          text: newTodoInput.trim(),
+          completed: false,
+        });
+      }
+      const itemsList = finalTodoItems
         .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.text}`)
         .join('\n');
       finalContent = itemsList;
@@ -267,7 +274,7 @@ export function NewNoteModal({
       onSaveNote(finalTitle, finalContent, {
         entryType: 'todo',
         isTodo: true,
-        todoItems,
+        todoItems: finalTodoItems,
         hasVoiceNote,
         imageUrl: attachedImage || undefined,
       });
@@ -283,12 +290,13 @@ export function NewNoteModal({
     onClose();
   };
 
+  const isDesktop = useIsDesktop();
   const ActiveIcon = typeConfig[entryType].icon;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-auto">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-6 pointer-events-auto">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -298,18 +306,22 @@ export function NewNoteModal({
             className="absolute inset-0 bg-black/75 backdrop-blur-md"
           />
 
-          {/* Drawer Sheet: Pure neutral dark (no bluish tones), ZERO split lines */}
+          {/* Dialog/Drawer Sheet */}
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 340 }}
-            className={`relative w-full max-w-md mx-auto rounded-t-[28px] pt-2.5 pb-5 px-5 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden transition-colors ${
+            initial={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+            animate={isDesktop ? { opacity: 1, scale: 1 } : { y: 0 }}
+            exit={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+            transition={
+              isDesktop
+                ? { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
+                : { type: 'spring', damping: 30, stiffness: 340 }
+            }
+            className={`relative w-full max-w-md md:max-w-xl mx-auto rounded-t-[28px] md:rounded-[28px] pt-2.5 md:pt-5 pb-5 px-5 md:px-7 shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh] overflow-hidden transition-colors ${
               isDark ? 'bg-[#121212] text-white' : 'bg-[#ffffff] text-neutral-900'
             }`}
           >
-            {/* Top subtle drag pill */}
-            <div className="flex justify-center pb-2">
+            {/* Top subtle drag pill (mobile only) */}
+            <div className="flex justify-center pb-2 md:hidden">
               <div
                 className={`w-9 h-1 rounded-full ${
                   isDark ? 'bg-neutral-800' : 'bg-neutral-300'

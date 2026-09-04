@@ -1,4 +1,14 @@
-export type NavTab = 'home' | 'todo' | 'add' | 'vault' | 'safe' | 'more' | 'notes' | 'favorites';
+export type NavTab =
+  | 'home'
+  | 'todo'
+  | 'add'
+  | 'vault'
+  | 'safe'
+  | 'more'
+  | 'notes'
+  | 'favorites'
+  | 'diary'
+  | 'archive';
 export type ThemeMode = 'dark' | 'light';
 export type EntryType = 'diary' | 'passwords' | 'todo' | 'notes';
 
@@ -25,6 +35,7 @@ export interface NoteItem {
   isTodo?: boolean;
   isVault?: boolean;
   isSafe?: boolean;
+  isArchived?: boolean;
   entryType?: EntryType;
   email?: string;
   service?: string;

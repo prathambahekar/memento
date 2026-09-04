@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ThemeMode, NoteItem } from '../types';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 interface PassKeyDrawerProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export function PassKeyDrawer({
   onDelete,
 }: PassKeyDrawerProps) {
   const isDark = theme === 'dark';
+  const isDesktop = useIsDesktop();
 
   const [showPassword, setShowPassword] = useState(false);
   const [copiedField, setCopiedField] = useState<'username' | 'password' | null>(null);
@@ -73,7 +75,7 @@ export function PassKeyDrawer({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-auto">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-6 pointer-events-auto">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -83,18 +85,22 @@ export function PassKeyDrawer({
             className="absolute inset-0 bg-black/75 backdrop-blur-md"
           />
 
-          {/* Drawer Sheet */}
+          {/* Dialog/Drawer Sheet */}
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 340 }}
-            className={`relative w-full max-w-md mx-auto rounded-t-[28px] pt-3 pb-7 px-5 shadow-2xl flex flex-col max-h-[88vh] overflow-hidden transition-colors ${
+            initial={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+            animate={isDesktop ? { opacity: 1, scale: 1 } : { y: 0 }}
+            exit={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+            transition={
+              isDesktop
+                ? { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
+                : { type: 'spring', damping: 30, stiffness: 340 }
+            }
+            className={`relative w-full max-w-md md:max-w-lg mx-auto rounded-t-[28px] md:rounded-[28px] pt-3 md:pt-6 pb-7 px-5 md:px-7 shadow-2xl flex flex-col max-h-[88vh] md:max-h-[80vh] overflow-hidden transition-colors ${
               isDark ? 'bg-[#121212] text-white' : 'bg-[#ffffff] text-neutral-900'
             }`}
           >
-            {/* Top drag pill */}
-            <div className="flex justify-center pb-2">
+            {/* Top drag pill (mobile only) */}
+            <div className="flex justify-center pb-2 md:hidden">
               <div
                 className={`w-9 h-1 rounded-full ${
                   isDark ? 'bg-neutral-800' : 'bg-neutral-300'

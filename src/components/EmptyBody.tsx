@@ -8,8 +8,11 @@ import {
   Mic,
   KeyRound,
   BookOpen,
+  Archive,
+  Check,
 } from 'lucide-react';
-import { NavTab, ThemeMode, NoteItem } from '../types';
+import { NavTab, ThemeMode, NoteItem, TodoSubItem } from '../types';
+import { parseTodoItemsFromNote } from './TodoDrawer';
 
 export type { NoteItem };
 
@@ -20,6 +23,20 @@ interface EmptyBodyProps {
   searchQuery: string;
   onOpenNewNote: () => void;
   onSelectNote?: (note: NoteItem) => void;
+  onToggleTodoItem?: (noteId: string, itemId: string) => void;
+}
+
+function getCleanNonTodoContent(note: NoteItem): string {
+  if (note.entryType !== 'todo' && !note.isTodo) return note.content || '';
+  if (!note.content) return '';
+  const cleaned = note.content
+    .replace(/\[(x|X|\s*)\]\s*[^\[\n\r]*/g, '')
+    .split('\n')
+    .map((l) => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  return cleaned;
 }
 
 export function EmptyBody({
@@ -29,6 +46,7 @@ export function EmptyBody({
   searchQuery,
   onOpenNewNote,
   onSelectNote,
+  onToggleTodoItem,
 }: EmptyBodyProps) {
   const isDark = theme === 'dark';
 
@@ -40,19 +58,27 @@ export function EmptyBody({
       n.content.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
+    if (activeTab === 'archive') return !!n.isArchived;
+    if (n.isArchived) return false;
     if (activeTab === 'favorites') return !!n.isFavorite;
-    if (activeTab === 'todo') return !!n.isTodo;
-    if (activeTab === 'vault' || activeTab === 'safe') return !!(n.isSafe || n.isVault);
+    if (activeTab === 'diary') return n.entryType === 'diary';
+    if (activeTab === 'todo') return !!n.isTodo || n.entryType === 'todo';
+    if (activeTab === 'vault' || activeTab === 'safe') return !!(n.isSafe || n.isVault || n.entryType === 'passwords');
     return true;
   });
 
   // If there are notes to show
   if (filteredNotes.length > 0) {
     return (
-      <main className="flex-1 px-5 pt-3 pb-24 overflow-y-auto no-scrollbar">
-        <div className="space-y-3">
+      <main className="flex-1 px-5 md:px-8 lg:px-10 pt-3 md:pt-6 pb-24 md:pb-8 overflow-y-auto no-scrollbar">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 md:gap-4">
           {filteredNotes.map((note) => {
             const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
+            const isTodo = note.entryType === 'todo' || !!note.isTodo;
+            const todoItems: TodoSubItem[] = isTodo ? parseTodoItemsFromNote(note) : [];
+            const completedCount = todoItems.filter((t) => t.completed).length;
+            const totalCount = todoItems.length;
+            const cleanContent = getCleanNonTodoContent(note);
 
             return (
               <motion.div
@@ -60,130 +86,204 @@ export function EmptyBody({
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 onClick={() => onSelectNote?.(note)}
-                className={`p-4 rounded-2xl active:scale-[0.99] transition-all cursor-pointer shadow-sm ${
+                className={`p-4 md:p-5 rounded-2xl active:scale-[0.99] transition-all cursor-pointer shadow-sm flex flex-col justify-between border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-800/80 ${
                   isDark
                     ? 'bg-[#141414] hover:bg-[#1a1a1a]'
                     : 'bg-[#ffffff] hover:bg-[#fafafa]'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <h3
-                    className={`text-base font-semibold tracking-tight ${
-                      isDark ? 'text-white' : 'text-neutral-900'
-                    }`}
-                  >
-                    {note.title}
-                  </h3>
-                  {isPassKey && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 ${
-                        isDark
-                          ? 'bg-[#222222] text-neutral-300'
-                          : 'bg-neutral-100 text-neutral-700'
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3
+                      className={`text-base font-semibold tracking-tight ${
+                        isDark ? 'text-white' : 'text-neutral-900'
                       }`}
                     >
-                      <KeyRound className="w-3 h-3" />
-                      <span>Key</span>
-                    </span>
-                  )}
-                  {!isPassKey && note.entryType === 'todo' && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 ${
-                        isDark
-                          ? 'bg-[#222222] text-neutral-300'
-                          : 'bg-neutral-100 text-neutral-700'
-                      }`}
-                    >
-                      <ListTodo className="w-3 h-3" />
-                      <span>Todo</span>
-                    </span>
-                  )}
-                  {!isPassKey && note.entryType === 'diary' && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 ${
-                        isDark
-                          ? 'bg-[#222222] text-neutral-300'
-                          : 'bg-neutral-100 text-neutral-700'
-                      }`}
-                    >
-                      <BookOpen className="w-3 h-3" />
-                      <span>Diary</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* For non-pass/keys: show email, content preview, and todo checklist */}
-                {!isPassKey && (
-                  <>
-                    {note.email && (
-                      <div className="mt-1 text-[11.5px] font-mono text-neutral-400">
-                        {note.email}
-                      </div>
+                      {note.title}
+                    </h3>
+                    {isPassKey && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNote?.(note);
+                        }}
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 transition-all ${
+                          isDark
+                            ? 'bg-[#222222] hover:bg-[#2c2c2c] text-neutral-300'
+                            : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                        }`}
+                        title="Open Key drawer"
+                      >
+                        <KeyRound className="w-3 h-3" />
+                        <span>Key</span>
+                      </button>
                     )}
-
-                    {note.content && (
-                      <p
-                        className={`text-xs mt-1.5 line-clamp-2 leading-relaxed ${
-                          isDark ? 'text-neutral-400' : 'text-neutral-600'
+                    {isTodo && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNote?.(note);
+                        }}
+                        className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-medium flex items-center gap-1 shrink-0 transition-all active:scale-95 ${
+                          completedCount === totalCount && totalCount > 0
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : isDark
+                            ? 'bg-[#222222] hover:bg-[#2c2c2c] text-neutral-300'
+                            : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                        }`}
+                        title="Open Todo drawer"
+                      >
+                        <ListTodo className="w-3 h-3" />
+                        <span>{totalCount > 0 ? `${completedCount}/${totalCount}` : 'Todo'}</span>
+                      </button>
+                    )}
+                    {!isPassKey && !isTodo && note.entryType === 'diary' && (
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0 ${
+                          isDark
+                            ? 'bg-[#222222] text-neutral-300'
+                            : 'bg-neutral-100 text-neutral-700'
                         }`}
                       >
-                        {note.content}
-                      </p>
+                        <BookOpen className="w-3 h-3" />
+                        <span>Diary</span>
+                      </span>
                     )}
+                  </div>
 
-                    {/* Todo checklist preview */}
-                    {note.todoItems && note.todoItems.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {note.todoItems.slice(0, 2).map((item) => (
+                  {/* Todo Card Body: clean interactive tasks & sleek progress bar */}
+                  {isTodo && (
+                    <div className="mt-2.5 space-y-2">
+                      {totalCount > 0 && (
+                        <div className="w-full bg-neutral-200 dark:bg-neutral-800 h-1 rounded-full overflow-hidden">
                           <div
-                            key={item.id}
-                            className={`text-[11.5px] flex items-center gap-1.5 ${
-                              item.completed
-                                ? 'line-through text-neutral-500'
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              completedCount === totalCount
+                                ? 'bg-emerald-500'
                                 : isDark
-                                ? 'text-neutral-300'
-                                : 'text-neutral-700'
+                                ? 'bg-white'
+                                : 'bg-neutral-900'
                             }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isDark ? 'bg-neutral-400' : 'bg-neutral-600'
-                              }`}
-                            />
-                            <span>{item.text}</span>
-                          </div>
-                        ))}
-                        {note.todoItems.length > 2 && (
-                          <div className="text-[10.5px] text-neutral-500 pl-3">
-                            +{note.todoItems.length - 2} more tasks
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
+                            style={{
+                              width: `${(completedCount / totalCount) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      )}
 
-              <div
-                className={`mt-3 flex items-center justify-between text-[11px] ${
-                  isDark ? 'text-neutral-500' : 'text-neutral-400'
-                }`}
-              >
-                <span>{note.date}</span>
-                <div className="flex items-center gap-2">
-                  {note.hasVoiceNote && (
-                    <span className="flex items-center gap-1 text-emerald-500">
-                      <Mic className="w-3 h-3" />
-                      <span>Voice</span>
-                    </span>
+                      {todoItems.length > 0 ? (
+                        <div className="space-y-1.5 pt-0.5">
+                          {todoItems.slice(0, 3).map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center gap-2 group/task"
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleTodoItem?.(note.id, item.id);
+                                }}
+                                className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 transition-all ${
+                                  item.completed
+                                    ? 'bg-emerald-500 text-white shadow-xs'
+                                    : isDark
+                                    ? 'border border-neutral-600 hover:border-neutral-400 bg-[#1c1c1c]'
+                                    : 'border border-neutral-300 hover:border-neutral-500 bg-white'
+                                }`}
+                                title={item.completed ? 'Mark pending' : 'Mark done'}
+                              >
+                                {item.completed && (
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                )}
+                              </button>
+                              <span
+                                className={`text-xs truncate select-none ${
+                                  item.completed
+                                    ? 'line-through text-neutral-500'
+                                    : isDark
+                                    ? 'text-neutral-300'
+                                    : 'text-neutral-700'
+                                }`}
+                              >
+                                {item.text}
+                              </span>
+                            </div>
+                          ))}
+
+                          {todoItems.length > 3 && (
+                            <div
+                              className={`text-[10.5px] font-medium pt-0.5 ${
+                                isDark ? 'text-neutral-500' : 'text-neutral-400'
+                              }`}
+                            >
+                              +{todoItems.length - 3} more tasks
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-neutral-500 italic py-1">
+                          No tasks yet • Click to add
+                        </div>
+                      )}
+
+                      {cleanContent && (
+                        <p
+                          className={`text-xs mt-1.5 line-clamp-2 leading-relaxed ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-600'
+                          }`}
+                        >
+                          {cleanContent}
+                        </p>
+                      )}
+                    </div>
                   )}
-                  {note.imageUrl && (
-                    <span className="text-blue-500">Photo</span>
+
+                  {/* Standard Notes / Diary Content */}
+                  {!isTodo && !isPassKey && (
+                    <div className="mt-2 space-y-1.5">
+                      {note.email && (
+                        <div className="text-[11.5px] font-mono text-neutral-400">
+                          {note.email}
+                        </div>
+                      )}
+
+                      {note.content && (
+                        <p
+                          className={`text-xs line-clamp-3 leading-relaxed ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-600'
+                          }`}
+                        >
+                          {note.content}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
-              </div>
-            </motion.div>
-          );
-        })}
+
+                <div
+                  className={`mt-3 flex items-center justify-between text-[11px] ${
+                    isDark ? 'text-neutral-500' : 'text-neutral-400'
+                  }`}
+                >
+                  <span>{note.date}</span>
+                  <div className="flex items-center gap-2">
+                    {note.hasVoiceNote && (
+                      <span className="flex items-center gap-1 text-emerald-500">
+                        <Mic className="w-3 h-3" />
+                        <span>Voice</span>
+                      </span>
+                    )}
+                    {note.imageUrl && (
+                      <span className="text-blue-500">Photo</span>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </main>
     );
@@ -220,6 +320,22 @@ export function EmptyBody({
         title: 'No favorite notes',
         desc: 'Mark notes to keep your most important thoughts easily accessible.',
         btn: 'Create note',
+      };
+    }
+    if (activeTab === 'diary') {
+      return {
+        Icon: BookOpen,
+        title: 'No diary entries yet',
+        desc: 'Reflect and journal your daily thoughts privately.',
+        btn: 'Write journal',
+      };
+    }
+    if (activeTab === 'archive') {
+      return {
+        Icon: Archive,
+        title: 'Archive is empty',
+        desc: 'Archived notes will be preserved here safely away from your main stream.',
+        btn: null,
       };
     }
     return {

@@ -11,10 +11,12 @@ import {
   Check,
   Moon,
   Sun,
-  ShieldCheck,
+  X,
 } from 'lucide-react';
 import { ThemeMode } from '../types';
 import { NoteItem } from './EmptyBody';
+import { DataDrawer } from './DataDrawer';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 interface SettingsPageProps {
   theme: ThemeMode;
@@ -22,6 +24,7 @@ interface SettingsPageProps {
   onBack: () => void;
   onToggleTheme: () => void;
   onClearAllNotes?: () => void;
+  onImportNotes?: (notes: NoteItem[]) => void;
 }
 
 export function SettingsPage({
@@ -30,8 +33,10 @@ export function SettingsPage({
   onBack,
   onToggleTheme,
   onClearAllNotes,
+  onImportNotes,
 }: SettingsPageProps) {
   const isDark = theme === 'dark';
+  const isDesktop = useIsDesktop();
   const [activeModal, setActiveModal] = useState<'none' | 'data' | 'info'>('none');
   const [copiedNotification, setCopiedNotification] = useState(false);
 
@@ -59,7 +64,7 @@ export function SettingsPage({
       }`}
     >
       {/* Top Bar with Back Button */}
-      <header className="px-5 pt-4 pb-3 flex items-center justify-between z-10 shrink-0">
+      <header className="px-5 md:px-8 pt-4 md:pt-6 pb-3 flex items-center justify-between z-10 shrink-0 max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-3">
           <button
             id="settings-back-btn"
@@ -79,7 +84,7 @@ export function SettingsPage({
       </header>
 
       {/* Main Settings Content List */}
-      <main className="flex-1 px-5 pt-2 pb-10 overflow-y-auto no-scrollbar space-y-6">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-5 md:px-8 pt-2 md:pt-6 pb-10 overflow-y-auto no-scrollbar space-y-6">
         {/* SECTION 1: APPEARANCE */}
         <section>
           <div
@@ -294,103 +299,19 @@ export function SettingsPage({
       </AnimatePresence>
 
       {/* MODAL / SHEET: Data Management */}
-      <AnimatePresence>
-        {activeModal === 'data' && (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-auto">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setActiveModal('none')}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-8 px-5 shadow-2xl transition-colors ${
-                isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
-              }`}
-            >
-              <div className="flex justify-center pb-3">
-                <div
-                  className={`w-12 h-1 rounded-full ${
-                    isDark ? 'bg-neutral-800' : 'bg-neutral-300'
-                  }`}
-                />
-              </div>
-
-              <h4 className="text-lg font-bold tracking-tight mb-1">Data Management</h4>
-              <p
-                className={`text-xs mb-5 ${
-                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                }`}
-              >
-                Export your notes to a standalone JSON backup file or clear your stored notes.
-              </p>
-
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={handleExportData}
-                  className={`w-full p-3.5 rounded-2xl flex items-center justify-between active:scale-[0.99] transition-all font-semibold text-xs ${
-                    isDark
-                      ? 'bg-[#1e1e1e] text-white hover:bg-[#262626]'
-                      : 'bg-[#f4f5f8] text-neutral-800 hover:bg-[#eaebef]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Download className="w-4 h-4 text-emerald-500" />
-                    <span>Download JSON Backup ({notes.length} notes)</span>
-                  </div>
-                  <span className="text-[11px] opacity-70">JSON</span>
-                </button>
-
-                {onClearAllNotes && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to clear all notes?')) {
-                        onClearAllNotes();
-                        setActiveModal('none');
-                      }
-                    }}
-                    className={`w-full p-3.5 rounded-2xl flex items-center justify-between active:scale-[0.99] transition-all font-semibold text-xs ${
-                      isDark
-                        ? 'bg-rose-950/40 text-rose-300 hover:bg-rose-950/60'
-                        : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Trash2 className="w-4 h-4 text-rose-500" />
-                      <span>Clear All Local Notes</span>
-                    </div>
-                    <span className="text-[11px] opacity-70">Reset</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setActiveModal('none')}
-                  className={`w-full py-3 rounded-2xl text-xs font-bold active:scale-95 transition-all mt-2 ${
-                    isDark
-                      ? 'bg-[#202020] text-neutral-300 hover:text-white'
-                      : 'bg-[#f0f1f4] text-neutral-700 hover:text-neutral-900'
-                  }`}
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <DataDrawer
+        isOpen={activeModal === 'data'}
+        theme={theme}
+        notes={notes}
+        onClose={() => setActiveModal('none')}
+        onClearAllNotes={onClearAllNotes}
+        onImportNotes={onImportNotes}
+      />
 
       {/* MODAL / SHEET: App Info */}
       <AnimatePresence>
         {activeModal === 'info' && (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-auto">
+          <div className="fixed inset-0 z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-6 pointer-events-auto">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -399,15 +320,20 @@ export function SettingsPage({
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             />
             <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-8 px-5 shadow-2xl transition-colors ${
+              initial={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+              animate={isDesktop ? { opacity: 1, scale: 1 } : { y: 0 }}
+              exit={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+              transition={
+                isDesktop
+                  ? { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
+                  : { type: 'spring', damping: 28, stiffness: 300 }
+              }
+              className={`relative w-full max-w-md md:max-w-lg mx-auto rounded-t-3xl md:rounded-3xl pt-3 md:pt-6 pb-6 px-5 md:px-7 shadow-2xl transition-colors ${
                 isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
               }`}
             >
-              <div className="flex justify-center pb-3">
+              {/* Drag indicator (mobile only) */}
+              <div className="flex justify-center pb-2 md:hidden">
                 <div
                   className={`w-12 h-1 rounded-full ${
                     isDark ? 'bg-neutral-800' : 'bg-neutral-300'
@@ -415,59 +341,70 @@ export function SettingsPage({
                 />
               </div>
 
-              <div className="flex flex-col items-center text-center py-3">
-                <div
-                  className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow-sm ${
-                    isDark ? 'bg-[#202020] text-white' : 'bg-neutral-900 text-white'
+              {/* Header row with Close button */}
+              <div className="flex items-center justify-between py-1 mb-3">
+                <span
+                  className={`text-[11px] font-bold tracking-wider uppercase ${
+                    isDark ? 'text-neutral-500' : 'text-neutral-500'
                   }`}
                 >
-                  <span className="text-xl font-bold tracking-tight">m</span>
+                  App Info
+                </span>
+                <button
+                  id="info-drawer-close-btn"
+                  type="button"
+                  onClick={() => setActiveModal('none')}
+                  aria-label="Close app info"
+                  className={`w-8 h-8 rounded-xl border flex items-center justify-center active:scale-95 transition-all ${
+                    isDark
+                      ? 'border-neutral-800 bg-[#1a1a1a] text-neutral-400 hover:text-white'
+                      : 'border-neutral-200 bg-white text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50'
+                  }`}
+                >
+                  <X className="w-4 h-4 stroke-[2]" />
+                </button>
+              </div>
+
+              {/* Logo & Name at left, Description at right */}
+              <div className="flex items-center justify-between gap-4 py-2">
+                {/* Left: Logo and App Name */}
+                <div className="flex items-center gap-3 shrink-0">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm shrink-0 ${
+                      isDark
+                        ? 'bg-[#1e1e1e] text-white border border-neutral-800/60'
+                        : 'bg-neutral-900 text-white'
+                    }`}
+                  >
+                    <span className="text-xl font-bold tracking-tight">m</span>
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold tracking-tight leading-tight">
+                      memento
+                    </h4>
+                  </div>
                 </div>
-                <h4 className="text-base font-bold tracking-tight">memento</h4>
+
+                {/* Right: Description */}
                 <p
-                  className={`text-xs mt-1 max-w-[260px] leading-relaxed ${
+                  className={`text-xs text-right leading-relaxed max-w-[210px] ${
                     isDark ? 'text-neutral-400' : 'text-neutral-500'
                   }`}
                 >
                   A minimal, distraction-free notebook built for swift thoughts and calm reflection.
                 </p>
+              </div>
 
-                <div
-                  className={`w-full mt-5 p-3.5 rounded-2xl flex items-center justify-between text-xs font-semibold ${
-                    isDark ? 'bg-[#1a1a1a]' : 'bg-[#f4f5f8]'
-                  }`}
-                >
-                  <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
-                    Version
-                  </span>
-                  <span>1.0.0</span>
-                </div>
-
-                <div
-                  className={`w-full mt-2 p-3.5 rounded-2xl flex items-center justify-between text-xs font-semibold ${
-                    isDark ? 'bg-[#1a1a1a]' : 'bg-[#f4f5f8]'
-                  }`}
-                >
-                  <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
-                    Privacy
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-emerald-500">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Local Storage Only
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveModal('none')}
-                  className={`w-full py-3 rounded-2xl text-xs font-bold active:scale-95 transition-all mt-5 ${
-                    isDark
-                      ? 'bg-white text-black hover:bg-neutral-200'
-                      : 'bg-black text-white hover:bg-neutral-800'
-                  }`}
-                >
-                  Done
-                </button>
+              {/* Version */}
+              <div
+                className={`w-full mt-3 p-3.5 rounded-2xl flex items-center justify-between text-xs font-semibold ${
+                  isDark ? 'bg-[#181818]' : 'bg-[#f4f5f8]'
+                }`}
+              >
+                <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
+                  Version
+                </span>
+                <span className="font-mono">1.0.0</span>
               </div>
             </motion.div>
           </div>

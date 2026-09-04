@@ -1,11 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Layers,
   Bookmark,
   Settings,
-  Shield,
-  Archive,
-  ListTodo,
   BookOpen,
   Moon,
   Sun,
@@ -29,14 +25,11 @@ export function DrawerMenu({
 }: DrawerMenuProps) {
   const isDark = theme === 'dark';
 
+  // Only items not already on the bottom nav bar, excluding data and archive as requested
   const modules = [
-    { id: 'my-things', label: 'My Things', icon: Layers },
     { id: 'favorites', label: 'Favourites', icon: Bookmark },
-    { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'safe', label: 'Safe', icon: Shield },
-    { id: 'archive', label: 'Archive', icon: Archive },
-    { id: 'todo', label: 'Todo', icon: ListTodo },
     { id: 'diary', label: 'Diary', icon: BookOpen },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   const handleModuleClick = (id: string) => {

@@ -1,6 +1,7 @@
 import { Home, ListTodo, Plus, Shield, MoreHorizontal } from 'lucide-react';
 import { motion } from 'motion/react';
 import { NavTab, ThemeMode } from '../types';
+import { triggerHaptic } from '../lib/capacitor';
 
 interface NavBarProps {
   activeTab: NavTab;
@@ -24,7 +25,7 @@ export function NavBar({
     <nav
       id="bottom-nav-bar"
       aria-label="Main Navigation"
-      className="fixed bottom-4 left-0 right-0 z-30 px-4 flex justify-center pointer-events-none"
+      className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-0 right-0 z-30 px-4 flex justify-center pointer-events-none md:hidden"
     >
       <div
         className={`pointer-events-auto w-full max-w-sm rounded-full px-2 py-2 flex items-center justify-between backdrop-blur-2xl transition-colors duration-200 ${
@@ -37,7 +38,10 @@ export function NavBar({
         <button
           id="nav-btn-home"
           type="button"
-          onClick={() => onSelectTab('home')}
+          onClick={() => {
+            triggerHaptic('selection');
+            onSelectTab('home');
+          }}
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="Home"
         >
@@ -68,7 +72,10 @@ export function NavBar({
         <button
           id="nav-btn-todo"
           type="button"
-          onClick={() => onSelectTab('todo')}
+          onClick={() => {
+            triggerHaptic('selection');
+            onSelectTab('todo');
+          }}
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="Todo"
         >
@@ -100,7 +107,10 @@ export function NavBar({
           <button
             id="nav-btn-create"
             type="button"
-            onClick={onOpenNewNote}
+            onClick={() => {
+              triggerHaptic('medium');
+              onOpenNewNote();
+            }}
             className={`w-12 h-12 rounded-full flex items-center justify-center active:scale-95 transition-all shadow-lg ${
               isDark
                 ? 'bg-white text-black hover:bg-neutral-200 shadow-white/10'
@@ -116,7 +126,10 @@ export function NavBar({
         <button
           id="nav-btn-safe"
           type="button"
-          onClick={() => onSelectTab('safe')}
+          onClick={() => {
+            triggerHaptic('selection');
+            onSelectTab('safe');
+          }}
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="Safe"
         >
@@ -147,7 +160,10 @@ export function NavBar({
         <button
           id="nav-btn-more"
           type="button"
-          onClick={onOpenDrawer}
+          onClick={() => {
+            triggerHaptic('light');
+            onOpenDrawer();
+          }}
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="More menu"
         >

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, X, Clock, FileText, Sparkles, Plus, KeyRound } from 'lucide-react';
 import { ThemeMode } from '../types';
 import { NoteItem } from './EmptyBody';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 interface SearchDrawerProps {
   isOpen: boolean;
@@ -58,10 +59,12 @@ export function SearchDrawer({
     onClose();
   };
 
+  const isDesktop = useIsDesktop();
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-auto">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-6 pointer-events-auto">
           {/* Backdrop overlay */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -72,18 +75,22 @@ export function SearchDrawer({
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
 
-          {/* Bottom Drawer Sheet */}
+          {/* Dialog/Drawer Sheet */}
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-8 px-5 shadow-2xl flex flex-col max-h-[85vh] transition-colors duration-200 ${
+            initial={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+            animate={isDesktop ? { opacity: 1, scale: 1 } : { y: 0 }}
+            exit={isDesktop ? { opacity: 0, scale: 0.94 } : { y: '100%' }}
+            transition={
+              isDesktop
+                ? { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
+                : { type: 'spring', damping: 28, stiffness: 300 }
+            }
+            className={`relative w-full max-w-md md:max-w-xl mx-auto rounded-t-3xl md:rounded-3xl pt-3 md:pt-6 pb-8 px-5 md:px-7 shadow-2xl flex flex-col max-h-[85vh] md:max-h-[80vh] transition-colors duration-200 ${
               isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
             }`}
           >
-            {/* Top drag handle indicator */}
-            <div className="flex justify-center pb-3">
+            {/* Top drag handle indicator (mobile only) */}
+            <div className="flex justify-center pb-3 md:hidden">
               <div
                 className={`w-12 h-1 rounded-full ${
                   isDark ? 'bg-neutral-800' : 'bg-neutral-300'
