@@ -29,7 +29,7 @@ export function NavBar({
       <div
         className={`pointer-events-auto w-full max-w-sm rounded-full px-2 py-2 flex items-center justify-between backdrop-blur-2xl transition-colors duration-200 ${
           isDark
-            ? 'bg-[#131316]/95 shadow-[0_12px_32px_rgba(0,0,0,0.7)]'
+            ? 'bg-[#121212]/95 shadow-[0_12px_32px_rgba(0,0,0,0.7)]'
             : 'bg-[#ffffff]/95 shadow-[0_12px_32px_rgba(0,0,0,0.08)]'
         }`}
       >
@@ -45,7 +45,7 @@ export function NavBar({
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
-                isDark ? 'bg-[#222228]' : 'bg-[#eeeff2]'
+                isDark ? 'bg-[#222222]' : 'bg-[#eeeff2]'
               }`}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />
@@ -76,7 +76,7 @@ export function NavBar({
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
-                isDark ? 'bg-[#222228]' : 'bg-[#eeeff2]'
+                isDark ? 'bg-[#222222]' : 'bg-[#eeeff2]'
               }`}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />
@@ -124,7 +124,7 @@ export function NavBar({
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
-                isDark ? 'bg-[#222228]' : 'bg-[#eeeff2]'
+                isDark ? 'bg-[#222222]' : 'bg-[#eeeff2]'
               }`}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />

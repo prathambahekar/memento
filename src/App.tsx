@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { TopBar } from './components/TopBar';
 import { NavBar } from './components/NavBar';
-import { EmptyBody, NoteItem } from './components/EmptyBody';
+import { EmptyBody } from './components/EmptyBody';
 import { DrawerMenu } from './components/DrawerMenu';
 import { SearchDrawer } from './components/SearchDrawer';
 import { NewNoteModal } from './components/NewNoteModal';
 import { SettingsPage } from './components/SettingsPage';
-import { NavTab, ThemeMode } from './types';
+import { PassKeyDrawer } from './components/PassKeyDrawer';
+import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem } from './types';
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -19,6 +20,7 @@ export default function App() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSearchDrawerOpen, setIsSearchDrawerOpen] = useState(false);
   const [isNewNoteOpen, setIsNewNoteOpen] = useState(false);
+  const [selectedPassKeyNote, setSelectedPassKeyNote] = useState<NoteItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [notes, setNotes] = useState<NoteItem[]>([]);
 
@@ -39,7 +41,24 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  const handleSaveNote = (title: string, content: string) => {
+  const handleSaveNote = (
+    title: string,
+    content: string,
+    extra?: {
+      entryType?: EntryType;
+      isTodo?: boolean;
+      isSafe?: boolean;
+      email?: string;
+      service?: string;
+      password?: string;
+      todoItems?: TodoSubItem[];
+      hasVoiceNote?: boolean;
+      imageUrl?: string;
+    }
+  ) => {
+    const isTodo = extra?.isTodo ?? (activeTab === 'todo');
+    const isSafe = extra?.isSafe ?? (activeTab === 'vault' || activeTab === 'safe');
+
     const newNote: NoteItem = {
       id: Date.now().toString(),
       title,
@@ -49,9 +68,16 @@ export default function App() {
         day: 'numeric',
       }),
       isFavorite: activeTab === 'favorites',
-      isTodo: activeTab === 'todo',
-      isVault: activeTab === 'vault' || activeTab === 'safe',
-      isSafe: activeTab === 'vault' || activeTab === 'safe',
+      isTodo,
+      isVault: isSafe,
+      isSafe,
+      entryType: extra?.entryType ?? (isTodo ? 'todo' : isSafe ? 'passwords' : 'diary'),
+      email: extra?.email,
+      service: extra?.service,
+      password: extra?.password,
+      todoItems: extra?.todoItems,
+      hasVoiceNote: extra?.hasVoiceNote,
+      imageUrl: extra?.imageUrl,
     };
     setNotes((prev) => [newNote, ...prev]);
   };
@@ -74,18 +100,24 @@ export default function App() {
     }
   };
 
+  const handleSelectNote = (note: NoteItem) => {
+    if (note.entryType === 'passwords' || note.isSafe || note.isVault) {
+      setSelectedPassKeyNote(note);
+    }
+  };
+
   const isDark = theme === 'dark';
 
   return (
     <div
       className={`min-h-dvh w-full flex justify-center transition-colors duration-200 ${
-        isDark ? 'bg-[#050507] text-[#f4f4f5]' : 'bg-[#e8e9ed] text-[#18181b]'
+        isDark ? 'bg-[#000000] text-[#f4f4f5]' : 'bg-[#e8e9ed] text-[#18181b]'
       }`}
     >
       {/* Mobile-first centered container */}
       <div
         className={`w-full max-w-md h-dvh flex flex-col relative overflow-hidden shadow-2xl transition-colors duration-200 ${
-          isDark ? 'bg-[#09090b]' : 'bg-[#f8f9fa]'
+          isDark ? 'bg-[#0a0a0a]' : 'bg-[#f8f9fa]'
         }`}
       >
         {currentPage === 'settings' ? (
@@ -111,6 +143,7 @@ export default function App() {
               notes={notes}
               searchQuery={searchQuery}
               onOpenNewNote={() => setIsNewNoteOpen(true)}
+              onSelectNote={handleSelectNote}
             />
 
             {/* Bottom Nav Bar: 5 buttons (Home, Notes, + at center, Favorites, More at rightmost) */}
@@ -134,8 +167,7 @@ export default function App() {
           notes={notes}
           onClose={() => setIsSearchDrawerOpen(false)}
           onSelectNote={(note) => {
-            // Can switch to notes or highlight note
-            setActiveTab('notes');
+            handleSelectNote(note);
           }}
           onCreateWithTitle={(title) => {
             handleSaveNote(title, '');
@@ -155,8 +187,27 @@ export default function App() {
         <NewNoteModal
           isOpen={isNewNoteOpen}
           theme={theme}
+          initialType={
+            activeTab === 'todo'
+              ? 'todo'
+              : activeTab === 'vault' || activeTab === 'safe'
+              ? 'passwords'
+              : 'diary'
+          }
           onClose={() => setIsNewNoteOpen(false)}
           onSaveNote={handleSaveNote}
+        />
+
+        {/* Pass / Key Detail Drawer Menu */}
+        <PassKeyDrawer
+          isOpen={!!selectedPassKeyNote}
+          theme={theme}
+          note={selectedPassKeyNote}
+          onClose={() => setSelectedPassKeyNote(null)}
+          onDelete={(id) => {
+            setNotes((prev) => prev.filter((n) => n.id !== id));
+            setSelectedPassKeyNote(null);
+          }}
         />
       </div>
     </div>

@@ -55,7 +55,7 @@ export function SettingsPage({
       exit={{ opacity: 0, x: 20 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className={`relative w-full h-full min-h-[640px] flex flex-col transition-colors duration-200 ${
-        isDark ? 'bg-[#09090b] text-white' : 'bg-[#f4f4f6] text-neutral-900'
+        isDark ? 'bg-[#0a0a0a] text-white' : 'bg-[#f4f4f6] text-neutral-900'
       }`}
     >
       {/* Top Bar with Back Button */}
@@ -68,7 +68,7 @@ export function SettingsPage({
             aria-label="Back"
             className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${
               isDark
-                ? 'bg-[#18181d] text-neutral-300 hover:text-white hover:bg-[#22222a]'
+                ? 'bg-[#181818] text-neutral-300 hover:text-white hover:bg-[#222222]'
                 : 'bg-white text-neutral-700 hover:text-neutral-900 hover:bg-[#eceef2] shadow-sm'
             }`}
           >
@@ -84,7 +84,7 @@ export function SettingsPage({
         <section>
           <div
             className={`text-[11px] font-bold tracking-wider uppercase mb-2.5 px-1 ${
-              isDark ? 'text-neutral-400' : 'text-neutral-500'
+              isDark ? 'text-neutral-500' : 'text-neutral-500'
             }`}
           >
             GENERAL & CUSTOMIZATION
@@ -97,7 +97,7 @@ export function SettingsPage({
             tabIndex={0}
             className={`w-full p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all shadow-sm ${
               isDark
-                ? 'bg-[#151518] hover:bg-[#1a1a20] border border-neutral-800/80 text-white'
+                ? 'bg-[#141414] hover:bg-[#1a1a1a] text-white'
                 : 'bg-white hover:bg-neutral-50/90 border border-neutral-200/80 text-neutral-900'
             }`}
           >
@@ -105,7 +105,7 @@ export function SettingsPage({
               {/* Left icon box */}
               <div
                 className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                  isDark ? 'bg-[#22222a] text-white' : 'bg-[#f0f1f4] text-neutral-800'
+                  isDark ? 'bg-[#202020] text-white' : 'bg-[#f0f1f4] text-neutral-800'
                 }`}
               >
                 <Palette className="w-5 h-5 stroke-[1.8]" />
@@ -131,13 +131,13 @@ export function SettingsPage({
               <span
                 className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 ${
                   isDark
-                    ? 'bg-[#252530] text-neutral-200'
+                    ? 'bg-[#202020] text-neutral-200'
                     : 'bg-[#f0f1f4] text-neutral-700'
                 }`}
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    isDark ? 'bg-indigo-400' : 'bg-amber-500'
+                    isDark ? 'bg-neutral-300' : 'bg-amber-500'
                   }`}
                 />
                 {isDark ? 'Dark Mode' : 'Light Mode'}
@@ -155,7 +155,7 @@ export function SettingsPage({
         <section>
           <div
             className={`text-[11px] font-bold tracking-wider uppercase mb-2.5 px-1 ${
-              isDark ? 'text-neutral-400' : 'text-neutral-500'
+              isDark ? 'text-neutral-500' : 'text-neutral-500'
             }`}
           >
             DATA & STORAGE
@@ -168,14 +168,14 @@ export function SettingsPage({
             tabIndex={0}
             className={`w-full p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all shadow-sm ${
               isDark
-                ? 'bg-[#151518] hover:bg-[#1a1a20] border border-neutral-800/80 text-white'
+                ? 'bg-[#141414] hover:bg-[#1a1a1a] text-white'
                 : 'bg-white hover:bg-neutral-50/90 border border-neutral-200/80 text-neutral-900'
             }`}
           >
             <div className="flex items-center gap-3.5 min-w-0 pr-2">
               <div
                 className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                  isDark ? 'bg-[#22222a] text-white' : 'bg-[#f0f1f4] text-neutral-800'
+                  isDark ? 'bg-[#202020] text-white' : 'bg-[#f0f1f4] text-neutral-800'
                 }`}
               >
                 <Database className="w-5 h-5 stroke-[1.8]" />
@@ -199,7 +199,7 @@ export function SettingsPage({
               <span
                 className={`px-3 py-1 rounded-full text-xs font-semibold ${
                   isDark
-                    ? 'bg-[#252530] text-neutral-200'
+                    ? 'bg-[#202020] text-neutral-200'
                     : 'bg-[#f0f1f4] text-neutral-700'
                 }`}
               >
@@ -218,7 +218,7 @@ export function SettingsPage({
         <section>
           <div
             className={`text-[11px] font-bold tracking-wider uppercase mb-2.5 px-1 ${
-              isDark ? 'text-neutral-400' : 'text-neutral-500'
+              isDark ? 'text-neutral-500' : 'text-neutral-500'
             }`}
           >
             SYSTEM & INFO
@@ -231,14 +231,14 @@ export function SettingsPage({
             tabIndex={0}
             className={`w-full p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all shadow-sm ${
               isDark
-                ? 'bg-[#151518] hover:bg-[#1a1a20] border border-neutral-800/80 text-white'
+                ? 'bg-[#141414] hover:bg-[#1a1a1a] text-white'
                 : 'bg-white hover:bg-neutral-50/90 border border-neutral-200/80 text-neutral-900'
             }`}
           >
             <div className="flex items-center gap-3.5 min-w-0 pr-2">
               <div
                 className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                  isDark ? 'bg-[#22222a] text-white' : 'bg-[#f0f1f4] text-neutral-800'
+                  isDark ? 'bg-[#202020] text-white' : 'bg-[#f0f1f4] text-neutral-800'
                 }`}
               >
                 <Info className="w-5 h-5 stroke-[1.8]" />
@@ -262,7 +262,7 @@ export function SettingsPage({
               <span
                 className={`px-3 py-1 rounded-full text-xs font-semibold ${
                   isDark
-                    ? 'bg-[#252530] text-neutral-200'
+                    ? 'bg-[#202020] text-neutral-200'
                     : 'bg-[#f0f1f4] text-neutral-700'
                 }`}
               >
@@ -310,13 +310,13 @@ export function SettingsPage({
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
               className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-8 px-5 shadow-2xl transition-colors ${
-                isDark ? 'bg-[#151518] text-white' : 'bg-white text-neutral-900'
+                isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
               }`}
             >
               <div className="flex justify-center pb-3">
                 <div
                   className={`w-12 h-1 rounded-full ${
-                    isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                    isDark ? 'bg-neutral-800' : 'bg-neutral-300'
                   }`}
                 />
               </div>
@@ -336,7 +336,7 @@ export function SettingsPage({
                   onClick={handleExportData}
                   className={`w-full p-3.5 rounded-2xl flex items-center justify-between active:scale-[0.99] transition-all font-semibold text-xs ${
                     isDark
-                      ? 'bg-[#202028] text-white hover:bg-[#282833]'
+                      ? 'bg-[#1e1e1e] text-white hover:bg-[#262626]'
                       : 'bg-[#f4f5f8] text-neutral-800 hover:bg-[#eaebef]'
                   }`}
                 >
@@ -375,7 +375,7 @@ export function SettingsPage({
                   onClick={() => setActiveModal('none')}
                   className={`w-full py-3 rounded-2xl text-xs font-bold active:scale-95 transition-all mt-2 ${
                     isDark
-                      ? 'bg-[#22222a] text-neutral-300 hover:text-white'
+                      ? 'bg-[#202020] text-neutral-300 hover:text-white'
                       : 'bg-[#f0f1f4] text-neutral-700 hover:text-neutral-900'
                   }`}
                 >
@@ -404,13 +404,13 @@ export function SettingsPage({
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
               className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-8 px-5 shadow-2xl transition-colors ${
-                isDark ? 'bg-[#151518] text-white' : 'bg-white text-neutral-900'
+                isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
               }`}
             >
               <div className="flex justify-center pb-3">
                 <div
                   className={`w-12 h-1 rounded-full ${
-                    isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                    isDark ? 'bg-neutral-800' : 'bg-neutral-300'
                   }`}
                 />
               </div>
@@ -418,7 +418,7 @@ export function SettingsPage({
               <div className="flex flex-col items-center text-center py-3">
                 <div
                   className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow-sm ${
-                    isDark ? 'bg-[#242430] text-white' : 'bg-neutral-900 text-white'
+                    isDark ? 'bg-[#202020] text-white' : 'bg-neutral-900 text-white'
                   }`}
                 >
                   <span className="text-xl font-bold tracking-tight">m</span>
@@ -434,7 +434,7 @@ export function SettingsPage({
 
                 <div
                   className={`w-full mt-5 p-3.5 rounded-2xl flex items-center justify-between text-xs font-semibold ${
-                    isDark ? 'bg-[#1c1c24]' : 'bg-[#f4f5f8]'
+                    isDark ? 'bg-[#1a1a1a]' : 'bg-[#f4f5f8]'
                   }`}
                 >
                   <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
@@ -445,7 +445,7 @@ export function SettingsPage({
 
                 <div
                   className={`w-full mt-2 p-3.5 rounded-2xl flex items-center justify-between text-xs font-semibold ${
-                    isDark ? 'bg-[#1c1c24]' : 'bg-[#f4f5f8]'
+                    isDark ? 'bg-[#1a1a1a]' : 'bg-[#f4f5f8]'
                   }`}
                 >
                   <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>

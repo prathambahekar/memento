@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, X, Clock, FileText, Sparkles, Plus } from 'lucide-react';
+import { Search, X, Clock, FileText, Sparkles, Plus, KeyRound } from 'lucide-react';
 import { ThemeMode } from '../types';
 import { NoteItem } from './EmptyBody';
 
@@ -79,14 +79,14 @@ export function SearchDrawer({
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-8 px-5 shadow-2xl flex flex-col max-h-[85vh] transition-colors duration-200 ${
-              isDark ? 'bg-[#131316] text-white' : 'bg-white text-neutral-900'
+              isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
             }`}
           >
             {/* Top drag handle indicator */}
             <div className="flex justify-center pb-3">
               <div
                 className={`w-12 h-1 rounded-full ${
-                  isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                  isDark ? 'bg-neutral-800' : 'bg-neutral-300'
                 }`}
               />
             </div>
@@ -103,7 +103,7 @@ export function SearchDrawer({
                 aria-label="Close search"
                 className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
                   isDark
-                    ? 'bg-[#1e1e24] text-neutral-400 hover:text-white'
+                    ? 'bg-[#1e1e1e] text-neutral-400 hover:text-white'
                     : 'bg-[#f0f1f4] text-neutral-600 hover:text-neutral-900'
                 }`}
               >
@@ -114,7 +114,7 @@ export function SearchDrawer({
             {/* Search Input Box */}
             <div
               className={`flex items-center rounded-2xl px-3.5 py-3 mb-3 shadow-inner transition-colors ${
-                isDark ? 'bg-[#1a1a20]' : 'bg-[#f0f1f4]'
+                isDark ? 'bg-[#181818]' : 'bg-[#f0f1f4]'
               }`}
             >
               <Search
@@ -171,7 +171,7 @@ export function SearchDrawer({
                           ? 'bg-white text-black'
                           : 'bg-neutral-900 text-white'
                         : isDark
-                        ? 'bg-[#1b1b22] text-neutral-400 hover:text-neutral-200'
+                        ? 'bg-[#1a1a1a] text-neutral-400 hover:text-neutral-200'
                         : 'bg-[#f2f3f6] text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
@@ -193,48 +193,66 @@ export function SearchDrawer({
                     {query ? `Matches (${filteredNotes.length})` : 'Notes'}
                   </div>
 
-                  {filteredNotes.map((note) => (
-                    <div
-                      key={note.id}
-                      onClick={() => handleSelect(note)}
-                      role="button"
-                      tabIndex={0}
-                      className={`p-3.5 rounded-2xl cursor-pointer active:scale-[0.99] transition-all text-left ${
-                        isDark
-                          ? 'bg-[#18181f] hover:bg-[#202028]'
-                          : 'bg-[#f6f7fa] hover:bg-[#eceef2]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-semibold tracking-tight truncate">
-                          {note.title}
-                        </span>
-                        <span
-                          className={`text-[11px] shrink-0 ml-2 ${
-                            isDark ? 'text-neutral-500' : 'text-neutral-400'
-                          }`}
-                        >
-                          {note.date}
-                        </span>
+                  {filteredNotes.map((note) => {
+                    const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
+
+                    return (
+                      <div
+                        key={note.id}
+                        onClick={() => handleSelect(note)}
+                        role="button"
+                        tabIndex={0}
+                        className={`p-3.5 rounded-2xl cursor-pointer active:scale-[0.99] transition-all text-left ${
+                          isDark
+                            ? 'bg-[#1a1a1a] hover:bg-[#222222]'
+                            : 'bg-[#f6f7fa] hover:bg-[#eceef2]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold tracking-tight truncate">
+                            {note.title}
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            {isPassKey && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded-full text-[9.5px] font-medium flex items-center gap-1 ${
+                                  isDark
+                                    ? 'bg-[#262626] text-neutral-300'
+                                    : 'bg-neutral-200 text-neutral-700'
+                                }`}
+                              >
+                                <KeyRound className="w-2.5 h-2.5" />
+                                <span>Key</span>
+                              </span>
+                            )}
+                            <span
+                              className={`text-[11px] ${
+                                isDark ? 'text-neutral-500' : 'text-neutral-400'
+                              }`}
+                            >
+                              {note.date}
+                            </span>
+                          </div>
+                        </div>
+                        {!isPassKey && note.content && (
+                          <p
+                            className={`text-xs line-clamp-2 leading-relaxed ${
+                              isDark ? 'text-neutral-400' : 'text-neutral-600'
+                            }`}
+                          >
+                            {note.content}
+                          </p>
+                        )}
                       </div>
-                      {note.content && (
-                        <p
-                          className={`text-xs line-clamp-2 leading-relaxed ${
-                            isDark ? 'text-neutral-400' : 'text-neutral-600'
-                          }`}
-                        >
-                          {note.content}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : query ? (
                 /* No matches found */
                 <div className="py-8 flex flex-col items-center justify-center text-center">
                   <div
                     className={`w-11 h-11 rounded-full flex items-center justify-center mb-3 ${
-                      isDark ? 'bg-[#1a1a22] text-neutral-500' : 'bg-[#f0f1f4] text-neutral-400'
+                      isDark ? 'bg-[#181818] text-neutral-500' : 'bg-[#f0f1f4] text-neutral-400'
                     }`}
                   >
                     <Search className="w-5 h-5" />
@@ -280,7 +298,7 @@ export function SearchDrawer({
                           onClick={() => setQuery(tag)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-medium active:scale-95 transition-all ${
                             isDark
-                              ? 'bg-[#18181f] text-neutral-300 hover:bg-[#22222b]'
+                              ? 'bg-[#1a1a1a] text-neutral-300 hover:bg-[#222222]'
                               : 'bg-[#f3f4f7] text-neutral-700 hover:bg-[#eaebef]'
                           }`}
                         >
@@ -292,7 +310,7 @@ export function SearchDrawer({
 
                   <div
                     className={`p-3.5 rounded-2xl flex items-center gap-3 ${
-                      isDark ? 'bg-[#18181f]' : 'bg-[#f6f7fa]'
+                      isDark ? 'bg-[#181818]' : 'bg-[#f6f7fa]'
                     }`}
                   >
                     <Clock

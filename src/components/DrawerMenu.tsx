@@ -65,14 +65,14 @@ export function DrawerMenu({
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             className={`relative w-full max-w-md mx-auto rounded-t-3xl pt-3 pb-6 px-5 shadow-2xl transition-colors duration-200 ${
-              isDark ? 'bg-[#131316] text-white' : 'bg-[#ffffff] text-neutral-900'
+              isDark ? 'bg-[#121212] text-white' : 'bg-[#ffffff] text-neutral-900'
             }`}
           >
             {/* Top drag handle */}
             <div className="flex justify-center pb-3">
               <div
                 className={`w-12 h-1 rounded-full ${
-                  isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                  isDark ? 'bg-neutral-800' : 'bg-neutral-300'
                 }`}
               />
             </div>
@@ -81,7 +81,7 @@ export function DrawerMenu({
             <div className="mb-3 mt-1">
               <div
                 className={`text-[11px] font-bold tracking-wider uppercase mb-2.5 px-0.5 ${
-                  isDark ? 'text-neutral-400' : 'text-neutral-500'
+                  isDark ? 'text-neutral-500' : 'text-neutral-400'
                 }`}
               >
                 FEATURES & MODULES
@@ -99,7 +99,7 @@ export function DrawerMenu({
                       onClick={() => handleModuleClick(module.id)}
                       className={`py-2.5 px-1.5 sm:py-3 sm:px-2 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center text-center gap-1.5 min-h-[64px] sm:min-h-[70px] active:scale-95 transition-all ${
                         isDark
-                          ? 'bg-[#1a1a20] hover:bg-[#22222a] text-neutral-200 hover:text-white'
+                          ? 'bg-[#1a1a1a] hover:bg-[#222222] text-neutral-200 hover:text-white'
                           : 'bg-[#f4f5f8] hover:bg-[#eaecee] text-neutral-800'
                       }`}
                     >
@@ -117,15 +117,8 @@ export function DrawerMenu({
               </div>
             </div>
 
-            {/* Subtle Divider before Theme */}
-            <div
-              className={`h-[1px] w-full my-4 ${
-                isDark ? 'bg-neutral-800/80' : 'bg-neutral-200/80'
-              }`}
-            />
-
-            {/* Theme row at bottom */}
-            <div className="flex items-center justify-between px-1 pt-1 pb-1">
+            {/* Theme row at bottom - no split lines */}
+            <div className="flex items-center justify-between px-1 pt-3 pb-1 mt-1">
               <div
                 onClick={onToggleTheme}
                 role="button"
@@ -134,7 +127,7 @@ export function DrawerMenu({
               >
                 <span
                   className={`text-sm ${
-                    isDark ? 'text-neutral-400' : 'text-neutral-500'
+                    isDark ? 'text-neutral-500' : 'text-neutral-500'
                   }`}
                 >
                   Theme:{' '}
@@ -152,7 +145,7 @@ export function DrawerMenu({
                 aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
                 className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                   isDark
-                    ? 'bg-[#1e1e26] text-neutral-300 hover:text-white'
+                    ? 'bg-[#202020] text-neutral-300 hover:text-white'
                     : 'bg-[#f0f1f4] text-neutral-700 hover:text-neutral-900'
                 }`}
               >

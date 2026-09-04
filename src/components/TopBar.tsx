@@ -30,7 +30,7 @@ export function TopBar({ theme, onOpenSearch }: TopBarProps) {
         aria-label="Open search menu"
         className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-all ${
           isDark
-            ? 'text-neutral-300 hover:text-white bg-[#151518] hover:bg-[#1f1f25]'
+            ? 'text-neutral-300 hover:text-white bg-[#181818] hover:bg-[#222222]'
             : 'text-neutral-700 hover:text-neutral-900 bg-[#ebecef] hover:bg-[#e2e3e7]'
         }`}
       >

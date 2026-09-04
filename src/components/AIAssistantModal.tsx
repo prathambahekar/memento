@@ -54,13 +54,13 @@ export function AIAssistantModal({
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             className={`relative w-full max-w-md mx-auto rounded-t-3xl p-5 pb-8 shadow-2xl flex flex-col ${
-              isDark ? 'bg-[#131316] text-white' : 'bg-white text-neutral-900'
+              isDark ? 'bg-[#121212] text-white' : 'bg-white text-neutral-900'
             }`}
           >
             <div className="flex justify-center pb-2">
               <div
                 className={`w-12 h-1 rounded-full ${
-                  isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                  isDark ? 'bg-neutral-800' : 'bg-neutral-300'
                 }`}
               />
             </div>
@@ -69,7 +69,7 @@ export function AIAssistantModal({
               <div className="flex items-center gap-2.5">
                 <div
                   className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                    isDark ? 'bg-[#252530] text-white' : 'bg-black text-white'
+                    isDark ? 'bg-[#202020] text-white' : 'bg-black text-white'
                   }`}
                 >
                   <Sparkles className="w-4 h-4" />
@@ -83,7 +83,7 @@ export function AIAssistantModal({
                 onClick={onClose}
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${
                   isDark
-                    ? 'bg-[#1e1e24] text-neutral-400 hover:text-white'
+                    ? 'bg-[#1e1e1e] text-neutral-400 hover:text-white'
                     : 'bg-[#f0f1f4] text-neutral-600 hover:text-neutral-900'
                 }`}
               >
@@ -107,7 +107,7 @@ export function AIAssistantModal({
                   onClick={() => setPrompt(sp.replace(/^[^\s]+\s/, ''))}
                   className={`w-full text-left text-xs px-3.5 py-2.5 rounded-xl transition-all active:scale-[0.99] ${
                     isDark
-                      ? 'bg-[#1c1c22] hover:bg-[#25252e] text-neutral-300'
+                      ? 'bg-[#1a1a1a] hover:bg-[#222222] text-neutral-300'
                       : 'bg-[#f3f4f7] hover:bg-[#ebecee] text-neutral-700'
                   }`}
                 >
@@ -118,7 +118,7 @@ export function AIAssistantModal({
 
             <div
               className={`flex items-center rounded-2xl px-3.5 py-2 shadow-inner ${
-                isDark ? 'bg-[#1a1a20]' : 'bg-[#f0f1f4]'
+                isDark ? 'bg-[#181818]' : 'bg-[#f0f1f4]'
               }`}
             >
               <input
