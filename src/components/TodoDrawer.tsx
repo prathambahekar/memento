@@ -100,6 +100,11 @@ export function TodoDrawer({
 
   if (!note) return null;
 
+  const isTodayList =
+    note.isTodayList ||
+    (note.title || '').toLowerCase() === 'today' ||
+    note.id.startsWith('todo-today-');
+
   const currentItems: TodoSubItem[] = parseTodoItemsFromNote(note);
   const completedCount = currentItems.filter((item) => item.completed).length;
   const totalCount = currentItems.length;
@@ -140,6 +145,7 @@ export function TodoDrawer({
       id: Date.now().toString(),
       text: trimmed,
       completed: false,
+      dueDate: isTodayList ? (note.todayDate || new Date().toISOString().split('T')[0]) : undefined,
     };
     updateItems([...currentItems, newItem]);
     setNewTaskInput('');
@@ -199,7 +205,11 @@ export function TodoDrawer({
                     isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-600'
                   }`}
                 >
-                  <ListTodo className="w-5 h-5 stroke-[2]" />
+                  {isTodayList ? (
+                    <Calendar className="w-5 h-5 stroke-[2]" />
+                  ) : (
+                    <ListTodo className="w-5 h-5 stroke-[2]" />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-lg font-bold tracking-tight truncate leading-tight">

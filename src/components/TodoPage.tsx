@@ -146,18 +146,6 @@ export function TodoPage({
   // Todo list note drawer state (for opening list when clicking title in Inbox)
   const [selectedTodoNoteForDrawer, setSelectedTodoNoteForDrawer] = useState<NoteItem | null>(null);
 
-  // Keep selectedTodoNoteForDrawer synced with notes updates
-  useEffect(() => {
-    if (selectedTodoNoteForDrawer) {
-      const updated = notes.find((n) => n.id === selectedTodoNoteForDrawer.id);
-      if (updated) {
-        setSelectedTodoNoteForDrawer(updated);
-      } else {
-        setSelectedTodoNoteForDrawer(null);
-      }
-    }
-  }, [notes, selectedTodoNoteForDrawer]);
-
   // Quick Reschedule / Date Picker Modal
   const [schedulingTask, setSchedulingTask] = useState<{
     listId: string;
@@ -204,6 +192,87 @@ export function TodoPage({
     });
   }, [notes, todayStr, onUpdateNote]);
 
+  // Active non-removable Today note for today
+  const activeTodayNote: NoteItem = useMemo(() => {
+    return (
+      todoLists.find(
+        (l) =>
+          l.isTodayList &&
+          !l.isArchived &&
+          (l.todayDate === todayStr || l.id === `todo-today-${todayStr}`)
+      ) || {
+        id: `todo-today-${todayStr}`,
+        title: 'Today',
+        content: '',
+        date: formattedTodayDate,
+        entryType: 'todo' as const,
+        isTodo: true,
+        isTodayList: true,
+        todayDate: todayStr,
+        todoItems: [],
+      }
+    );
+  }, [todoLists, todayStr, formattedTodayDate]);
+
+  // Keep selectedTodoNoteForDrawer synced with notes updates
+  useEffect(() => {
+    if (selectedTodoNoteForDrawer) {
+      const updated = notes.find((n) => n.id === selectedTodoNoteForDrawer.id);
+      if (updated) {
+        setSelectedTodoNoteForDrawer(updated);
+      } else if (
+        selectedTodoNoteForDrawer.isTodayList ||
+        selectedTodoNoteForDrawer.id === activeTodayNote.id ||
+        (selectedTodoNoteForDrawer.title || '').toLowerCase() === 'today'
+      ) {
+        setSelectedTodoNoteForDrawer(activeTodayNote);
+      } else {
+        setSelectedTodoNoteForDrawer(null);
+      }
+    }
+  }, [notes, selectedTodoNoteForDrawer?.id, activeTodayNote]);
+
+  // Ensure an active Today note exists in persistent notes for today
+  useEffect(() => {
+    const exists = notes.some(
+      (n) =>
+        (n.entryType === 'todo' || !!n.isTodo) &&
+        n.isTodayList &&
+        !n.isArchived &&
+        n.todayDate === todayStr
+    );
+    if (!exists) {
+      const initialTodayNote: NoteItem = {
+        id: `todo-today-${todayStr}`,
+        title: 'Today',
+        content: '',
+        date: formattedTodayDate,
+        isTodo: true,
+        entryType: 'todo',
+        isTodayList: true,
+        todayDate: todayStr,
+        todoItems: [],
+      };
+      onAddNote(initialTodayNote);
+    }
+  }, [notes, todayStr, formattedTodayDate, onAddNote]);
+
+  // Safe delete handler preventing removal of Today note
+  const handleSafeDeleteNote = (noteId: string) => {
+    const target = notes.find((n) => n.id === noteId);
+    if (
+      target &&
+      (target.isTodayList ||
+        target.id === `todo-today-${todayStr}` ||
+        target.id === activeTodayNote.id ||
+        ((target.title || '').toLowerCase() === 'today' && target.todayDate === todayStr))
+    ) {
+      // Non-removable: Ignore deletion of Today card
+      return;
+    }
+    onDeleteNote(noteId);
+  };
+
   // Structure all tasks with their source list reference
   const allTasksWithList = useMemo(() => {
     const items: Array<{
@@ -214,9 +283,13 @@ export function TodoPage({
 
     todoLists.forEach((list) => {
       const parsed = parseTodoItemsFromNote(list);
+      const isListToday = list.isTodayList && list.todayDate === todayStr;
       parsed.forEach((task) => {
         items.push({
-          task,
+          task: {
+            ...task,
+            dueDate: task.dueDate || (isListToday ? todayStr : undefined),
+          },
           listId: list.id,
           listTitle: list.title || 'Tasks',
         });
@@ -224,7 +297,7 @@ export function TodoPage({
     });
 
     return items;
-  }, [todoLists]);
+  }, [todoLists, todayStr]);
 
   // Counts for each of the 3 tabs (Inbox displays todo lists)
   const inboxTotalCount = todoLists.length;
@@ -349,8 +422,14 @@ export function TodoPage({
   }, [todayStr]);
 
   // Filter lists in Inbox according to status & search query
+  // Always includes non-removable Today card at the top, even if zero entries
   const displayedInboxLists = useMemo(() => {
-    return todoLists.filter((list) => {
+    const customLists = todoLists.filter((list) => {
+      // Exclude active today list from custom lists to prevent duplication with pinned Today card
+      if (list.isTodayList && list.todayDate === todayStr) return false;
+      if (list.id === `todo-today-${todayStr}`) return false;
+      if ((list.title || '').toLowerCase() === 'today' && list.isTodayList) return false;
+
       const items = parseTodoItemsFromNote(list);
       const hasPending = items.some((t) => !t.completed);
       const hasCompleted = items.some((t) => t.completed);
@@ -367,7 +446,34 @@ export function TodoPage({
       }
       return true;
     });
-  }, [todoLists, filterStatus, searchQuery]);
+
+    // Check if Today card should be shown
+    // User requirement: "show today card in inbox even if its zero entry and iit is non removable"
+    let showToday = true;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchesTitle = 'today'.includes(q);
+      const matchesTasks = todayTasks.some((t) => t.task.text.toLowerCase().includes(q));
+      showToday = matchesTitle || matchesTasks;
+    } else {
+      if (filterStatus === 'completed') {
+        showToday = todayTasks.filter((t) => t.task.completed).length > 0;
+      }
+      // For 'all' and 'pending', showToday is ALWAYS true even with 0 entries!
+    }
+
+    if (showToday) {
+      return [activeTodayNote, ...customLists];
+    }
+    return customLists;
+  }, [
+    todoLists,
+    filterStatus,
+    searchQuery,
+    todayStr,
+    activeTodayNote,
+    todayTasks,
+  ]);
 
   // Retain displayedInboxTasks for backward compatibility or task search
   const displayedInboxTasks = useMemo(() => {
@@ -631,6 +737,11 @@ export function TodoPage({
     if (activeTab === 'inbox') {
       const trimmed = inputText.trim();
       const isToday = trimmed.toLowerCase() === 'today';
+      if (isToday) {
+        setActiveTab('today');
+        setInputText('');
+        return;
+      }
       const newNote: NoteItem = {
         id: `todo-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         title: trimmed,
@@ -957,20 +1068,9 @@ export function TodoPage({
           </button>
 
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold tracking-tight truncate">
-                Todo
-              </h1>
-              <span
-                className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${
-                  isDark
-                    ? 'bg-neutral-800 text-neutral-300'
-                    : 'bg-neutral-100 text-neutral-600'
-                }`}
-              >
-                {inboxActiveCount} active
-              </span>
-            </div>
+            <h1 className="text-xl font-bold tracking-tight truncate">
+              Todo
+            </h1>
           </div>
         </div>
 
@@ -1275,168 +1375,59 @@ export function TodoPage({
               </div>
             )}
 
-            {/* Todo Lists in Inbox */}
+            {/* Archived Lists Section - Above Today and other lists without splitting lines */}
             <div className="space-y-2">
-              <AnimatePresence initial={false}>
-                {displayedInboxLists.map((list) => {
-                  const items = parseTodoItemsFromNote(list);
-                  const completedCount = items.filter((t) => t.completed).length;
-                  const totalCount = items.length;
-                  const pendingCount = totalCount - completedCount;
-
-                  return (
-                    <motion.div
-                      key={`inbox-list-${list.id}`}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.16 }}
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setSelectedTodoNoteForDrawer(list);
-                      }}
-                      className={`group w-full p-4 rounded-2xl sm:rounded-3xl cursor-pointer transition-all active:scale-[0.99] flex items-center justify-between gap-3.5 border ${
-                        isDark
-                          ? 'bg-[#141416] hover:bg-[#1a1a1e] border-neutral-800/80'
-                          : 'bg-white hover:bg-neutral-50 border-neutral-200/80 shadow-xs'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                        <div
-                          className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
-                            isDark
-                              ? 'bg-emerald-500/15 text-emerald-400 group-hover:bg-emerald-500/20'
-                              : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100'
-                          }`}
-                        >
-                          <ListTodo className="w-5 h-5 stroke-[2]" />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <h3
-                            className={`text-[15px] font-semibold tracking-tight truncate leading-snug ${
-                              isDark ? 'text-white' : 'text-neutral-900'
-                            }`}
-                          >
-                            {list.title || 'Tasks'}
-                          </h3>
-                          <div
-                            className={`flex items-center gap-2 mt-0.5 text-xs ${
-                              isDark ? 'text-neutral-400' : 'text-neutral-500'
-                            }`}
-                          >
-                            <span>
-                              {totalCount === 0
-                                ? 'No tasks'
-                                : `${totalCount} ${totalCount === 1 ? 'task' : 'tasks'}`}
-                            </span>
-                            {totalCount > 0 && (
-                              <>
-                                <span>•</span>
-                                <span>
-                                  {completedCount === totalCount
-                                    ? 'All done'
-                                    : `${completedCount} done, ${pendingCount} active`}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        className="flex items-center gap-1 shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('medium');
-                            onDeleteNote(list.id);
-                          }}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all opacity-70 hover:opacity-100 ${
-                            isDark
-                              ? 'hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400'
-                              : 'hover:bg-rose-50 text-neutral-500 hover:text-rose-600'
-                          }`}
-                          aria-label="Delete list"
-                          title="Delete list"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <ChevronRight
-                          className={`w-4 h-4 transition-transform group-hover:translate-x-0.5 ${
-                            isDark ? 'text-neutral-500' : 'text-neutral-400'
-                          }`}
-                        />
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-
-              {displayedInboxLists.length === 0 && (
-                <EmptyStateBox
-                  isDark={isDark}
-                  title={
-                    filterStatus === 'completed'
-                      ? 'No completed lists'
-                      : filterStatus === 'pending'
-                      ? 'No active lists'
-                      : 'Inbox is empty'
-                  }
-                  description={
-                    filterStatus === 'completed'
-                      ? 'Completed lists will show up here.'
-                      : 'Create a new list using the input below to organize your tasks.'
-                  }
-                />
-              )}
-
-              {/* Archived Lists Section */}
-              {archivedTodoLists.length > 0 && (
-                <div className="pt-4 mt-4 border-t border-neutral-200/60 dark:border-neutral-800/60 space-y-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setIsArchiveSectionOpen((prev) => !prev);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-colors ${
-                      isDark
-                        ? 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40'
-                        : 'text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100/70'
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setIsArchiveSectionOpen((prev) => !prev);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-colors ${
+                  isDark
+                    ? 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40'
+                    : 'text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100/70'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Archive className="w-3.5 h-3.5 stroke-[2.2]" />
+                  <span>Archive</span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                      isDark ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-200 text-neutral-700'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <Archive className="w-3.5 h-3.5 stroke-[2.2]" />
-                      <span>Archived Lists</span>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                          isDark ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-200 text-neutral-700'
+                    {archivedTodoLists.length}
+                  </span>
+                </div>
+                {isArchiveSectionOpen ? (
+                  <ChevronUp className="w-4 h-4 text-neutral-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-neutral-400" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {isArchiveSectionOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="space-y-2 overflow-hidden"
+                  >
+                    {archivedTodoLists.length === 0 ? (
+                      <div
+                        className={`p-4 rounded-2xl border text-center text-xs ${
+                          isDark
+                            ? 'bg-[#141416]/60 border-neutral-800/70 text-neutral-500'
+                            : 'bg-neutral-50 border-neutral-200/80 text-neutral-400'
                         }`}
                       >
-                        {archivedTodoLists.length}
-                      </span>
-                    </div>
-                    {isArchiveSectionOpen ? (
-                      <ChevronUp className="w-4 h-4 text-neutral-400" />
+                        No archived lists
+                      </div>
                     ) : (
-                      <ChevronDown className="w-4 h-4 text-neutral-400" />
-                    )}
-                  </button>
-
-                  <AnimatePresence>
-                    {isArchiveSectionOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.18 }}
-                        className="space-y-2 overflow-hidden"
-                      >
+                      <>
                         <p className={`text-[11px] px-2 italic ${isDark ? 'text-neutral-500' : 'text-neutral-400'}`}>
                           Past daily lists and archived todo lists are preserved here.
                         </p>
@@ -1502,7 +1493,7 @@ export function TodoPage({
                                         <span>
                                           {completedCount === totalCount
                                             ? 'All done'
-                                            : `${completedCount} done, ${pendingCount} active`}
+                                            : `${completedCount} done`}
                                         </span>
                                       </>
                                     )}
@@ -1535,7 +1526,7 @@ export function TodoPage({
                                   type="button"
                                   onClick={() => {
                                     triggerHaptic('medium');
-                                    onDeleteNote(list.id);
+                                    handleSafeDeleteNote(list.id);
                                   }}
                                   className={`w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-75 hover:opacity-100 ${
                                     isDark
@@ -1551,10 +1542,146 @@ export function TodoPage({
                             </div>
                           );
                         })}
-                      </motion.div>
+                      </>
                     )}
-                  </AnimatePresence>
-                </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Todo Lists in Inbox */}
+            <div className="space-y-2">
+              <AnimatePresence initial={false}>
+                {displayedInboxLists.map((list) => {
+                  const isTodayCard =
+                    list.isTodayList ||
+                    list.id === activeTodayNote.id ||
+                    list.id === `todo-today-${todayStr}` ||
+                    (list.title || '').toLowerCase() === 'today';
+
+                  const items = isTodayCard
+                    ? todayTasks.map((t) => t.task)
+                    : parseTodoItemsFromNote(list);
+                  const completedCount = isTodayCard
+                    ? todayTasks.filter((t) => t.task.completed).length
+                    : items.filter((t) => t.completed).length;
+                  const totalCount = isTodayCard ? todayTasks.length : items.length;
+
+                  return (
+                    <motion.div
+                      key={`inbox-list-${list.id}`}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.16 }}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setSelectedTodoNoteForDrawer(isTodayCard ? activeTodayNote : list);
+                      }}
+                      className={`group w-full p-4 rounded-2xl sm:rounded-3xl cursor-pointer transition-all active:scale-[0.99] flex items-center justify-between gap-3.5 border ${
+                        isDark
+                          ? 'bg-[#141416] hover:bg-[#1a1a1e] border-neutral-800/80'
+                          : 'bg-white hover:bg-neutral-50 border-neutral-200/80 shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                        <div
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
+                            isDark
+                              ? 'bg-emerald-500/15 text-emerald-400 group-hover:bg-emerald-500/20'
+                              : 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100'
+                          }`}
+                        >
+                          {isTodayCard ? (
+                            <Calendar className="w-5 h-5 stroke-[2]" />
+                          ) : (
+                            <ListTodo className="w-5 h-5 stroke-[2]" />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <h3
+                            className={`text-[15px] font-semibold tracking-tight truncate leading-snug ${
+                              isDark ? 'text-white' : 'text-neutral-900'
+                            }`}
+                          >
+                            {isTodayCard ? 'Today' : (list.title || 'Tasks')}
+                          </h3>
+                          <div
+                            className={`flex items-center gap-2 mt-0.5 text-xs ${
+                              isDark ? 'text-neutral-400' : 'text-neutral-500'
+                            }`}
+                          >
+                            <span>
+                              {totalCount === 0
+                                ? 'No tasks'
+                                : `${totalCount} ${totalCount === 1 ? 'task' : 'tasks'}`}
+                            </span>
+                            {totalCount > 0 && (
+                              <>
+                                <span>•</span>
+                                <span>
+                                  {completedCount === totalCount
+                                    ? 'All done'
+                                    : `${completedCount} done`}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        className="flex items-center gap-1 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {!isTodayCard && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              handleSafeDeleteNote(list.id);
+                            }}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all opacity-70 hover:opacity-100 ${
+                              isDark
+                                ? 'hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400'
+                                : 'hover:bg-rose-50 text-neutral-500 hover:text-rose-600'
+                            }`}
+                            aria-label="Delete list"
+                            title="Delete list"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        <ChevronRight
+                          className={`w-4 h-4 transition-transform group-hover:translate-x-0.5 ${
+                            isDark ? 'text-neutral-500' : 'text-neutral-400'
+                          }`}
+                        />
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+
+              {displayedInboxLists.length === 0 && (
+                <EmptyStateBox
+                  isDark={isDark}
+                  title={
+                    filterStatus === 'completed'
+                      ? 'No completed lists'
+                      : filterStatus === 'pending'
+                      ? 'No active lists'
+                      : 'Inbox is empty'
+                  }
+                  description={
+                    filterStatus === 'completed'
+                      ? 'Completed lists will show up here.'
+                      : 'Create a new list using the input below to organize your tasks.'
+                  }
+                />
               )}
             </div>
           </div>
@@ -2215,10 +2342,17 @@ export function TodoPage({
           onUpdateNote(updated);
           setSelectedTodoNoteForDrawer(updated);
         }}
-        onDelete={(id) => {
-          onDeleteNote(id);
-          setSelectedTodoNoteForDrawer(null);
-        }}
+        onDelete={
+          selectedTodoNoteForDrawer?.isTodayList ||
+          selectedTodoNoteForDrawer?.id === activeTodayNote.id ||
+          selectedTodoNoteForDrawer?.todayDate === todayStr ||
+          (selectedTodoNoteForDrawer?.title || '').toLowerCase() === 'today'
+            ? undefined
+            : (id) => {
+                handleSafeDeleteNote(id);
+                setSelectedTodoNoteForDrawer(null);
+              }
+        }
         onToggleFavorite={(id) => {
           const target = notes.find((n) => n.id === id);
           if (target) {

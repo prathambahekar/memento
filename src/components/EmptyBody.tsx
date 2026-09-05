@@ -471,7 +471,7 @@ function NoteCard({
       onTouchMove={onTouchMoveCard}
       onTouchEnd={onTouchEndCard}
       onTouchCancel={onTouchEndCard}
-      className={`group relative w-full p-3.5 sm:p-4 rounded-2xl transition-all ${
+      className={`group relative w-full p-3.5 sm:p-4 rounded-[22px] transition-all ${
         isTouchDevice ? '' : 'cursor-grab active:cursor-grabbing'
       } shadow-xs border select-none ${
         isDragging
@@ -498,21 +498,6 @@ function NoteCard({
         </h3>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Category / Security Badge */}
-          {isPassKey && (
-            <span
-              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
-                isDark
-                  ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
-                  : 'bg-amber-100 text-amber-800 border border-amber-200/80'
-              }`}
-              title="Key"
-            >
-              <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-300 shrink-0" />
-              <span className="hidden md:inline">Key</span>
-            </span>
-          )}
-
           {isDiary && (
             <span
               className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
@@ -542,6 +527,20 @@ function NoteCard({
             >
               <ListTodo className="w-3 h-3 md:w-2.5 md:h-2.5 text-emerald-500 dark:text-emerald-300 shrink-0" />
               <span className="hidden md:inline">Todo</span>
+            </span>
+          )}
+
+          {isPassKey && (
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+                isDark
+                  ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
+                  : 'bg-amber-100 text-amber-800 border border-amber-200/80'
+              }`}
+              title="Safe key"
+            >
+              <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-400 shrink-0" />
+              <span className="hidden md:inline">Key</span>
             </span>
           )}
 

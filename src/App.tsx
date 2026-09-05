@@ -7,6 +7,7 @@ import { SearchDrawer } from './components/SearchDrawer';
 import { NewNoteModal } from './components/NewNoteModal';
 import { SettingsPage } from './components/SettingsPage';
 import { TodoPage } from './components/TodoPage';
+import { SafePage } from './components/SafePage';
 import { PassKeyDrawer } from './components/PassKeyDrawer';
 import { TodoDrawer, parseTodoItemsFromNote } from './components/TodoDrawer';
 import { DiaryDrawer } from './components/DiaryDrawer';
@@ -18,6 +19,45 @@ import {
   registerNativeBackButton,
   triggerHaptic,
 } from './lib/capacitor';
+
+const DEFAULT_INITIAL_NOTES: NoteItem[] = [
+  {
+    id: 'safe-discord',
+    title: 'Discord',
+    content: 'Email/Username: alex.dev@gmail.com\nPassword: ••••••••••••\nNotes: Primary account for community and dev servers',
+    date: 'Sep 5',
+    isSafe: true,
+    isVault: true,
+    entryType: 'passwords',
+    email: 'alex.dev@gmail.com',
+    password: 'w9$K#xL7!mP2@qR4',
+    service: 'Discord',
+  },
+  {
+    id: 'safe-netflix',
+    title: 'Netflix',
+    content: 'Email/Username: family.stream@outlook.com\nPassword: ••••••••••••\nNotes: 4K Premium subscription renewed monthly',
+    date: 'Sep 4',
+    isSafe: true,
+    isVault: true,
+    entryType: 'passwords',
+    email: 'family.stream@outlook.com',
+    password: 'N3tfl!x#2026$Ultra',
+    service: 'Netflix',
+  },
+  {
+    id: 'safe-prime-video',
+    title: 'Prime Video',
+    content: 'Email/Username: alex.prime@amazon.com\nPassword: ••••••••••••\nNotes: Amazon household video streaming profile',
+    date: 'Sep 3',
+    isSafe: true,
+    isVault: true,
+    entryType: 'passwords',
+    email: 'alex.prime@amazon.com',
+    password: 'P!m3V!deo#9821&X',
+    service: 'Prime Video',
+  },
+];
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -110,9 +150,9 @@ export default function App() {
       const saved = localStorage.getItem('memento_notes');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           const seen = new Set<string>();
-          return parsed.map((item, idx) => {
+          const loaded = parsed.map((item, idx) => {
             let id = item?.id ? String(item.id) : `note-${idx}-${Date.now()}`;
             if (seen.has(id)) {
               id = `${id}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
@@ -120,12 +160,17 @@ export default function App() {
             seen.add(id);
             return { ...item, id };
           });
+          const hasSafe = loaded.some((n) => n.entryType === 'passwords' || n.isSafe || n.isVault);
+          if (!hasSafe) {
+            return [...loaded, ...DEFAULT_INITIAL_NOTES];
+          }
+          return loaded;
         }
       }
     } catch {
       // ignore
     }
-    return [];
+    return DEFAULT_INITIAL_NOTES;
   });
 
   useEffect(() => {
@@ -186,8 +231,9 @@ export default function App() {
         setIsDrawerOpen(false);
         return true;
       }
-      if (currentPage === 'settings' || currentPage === 'todo') {
+      if (currentPage === 'settings' || currentPage === 'todo' || currentPage === 'safe') {
         setCurrentPage('main');
+        setActiveTab('home');
         return true;
       }
       return false;
@@ -303,7 +349,8 @@ export default function App() {
       setCurrentPage('todo');
     } else if (itemId === 'safe' || itemId === 'vault') {
       setActiveTab('safe');
-      setCurrentPage('main');
+      setHomeChip('safe');
+      setCurrentPage('safe');
     } else if (itemId === 'my-things') {
       setActiveTab('home');
       setCurrentPage('main');
@@ -408,10 +455,12 @@ export default function App() {
           onSelectTab={(tab) => {
             if (tab === 'todo') {
               setCurrentPage('todo');
+            } else if (tab === 'vault' || tab === 'safe') {
+              setHomeChip('safe');
+              setActiveTab('safe');
+              setCurrentPage('safe');
             } else {
-              if (tab === 'vault' || tab === 'safe') {
-                setHomeChip('safe');
-              } else if (tab === 'home' || tab === 'notes') {
+              if (tab === 'home' || tab === 'notes') {
                 setHomeChip('all');
               }
               setActiveTab(tab);
@@ -466,6 +515,22 @@ export default function App() {
               onSearchChange={setSearchQuery}
               onOpenSearch={() => setIsSearchDrawerOpen(true)}
             />
+          ) : currentPage === 'safe' ? (
+            <SafePage
+              theme={theme}
+              notes={notes}
+              onBack={() => {
+                setActiveTab('home');
+                setCurrentPage('main');
+              }}
+              onSelectNote={handleSelectNote}
+              onOpenNewSafeNote={() => handleOpenNewNote('passwords')}
+              onUpdateNote={handleUpdateNote}
+              onDeleteNote={handleDeleteNote}
+              onToggleFavorite={handleToggleFavorite}
+              searchQuery={searchQuery}
+              onOpenSearch={() => setIsSearchDrawerOpen(true)}
+            />
           ) : (
             <>
               {/* Top Bar: 'memento' on mobile, Section title + Search on desktop */}
@@ -518,10 +583,12 @@ export default function App() {
             onSelectTab={(tab) => {
               if (tab === 'todo') {
                 setCurrentPage('todo');
+              } else if (tab === 'vault' || tab === 'safe') {
+                setHomeChip('safe');
+                setActiveTab('safe');
+                setCurrentPage('safe');
               } else {
-                if (tab === 'vault' || tab === 'safe') {
-                  setHomeChip('safe');
-                } else if (tab === 'home' || tab === 'notes') {
+                if (tab === 'home' || tab === 'notes') {
                   setHomeChip('all');
                 }
                 setActiveTab(tab);
