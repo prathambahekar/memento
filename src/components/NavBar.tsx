@@ -1,42 +1,58 @@
 import { Home, ListTodo, Plus, Shield, MoreHorizontal } from 'lucide-react';
 import { motion } from 'motion/react';
-import { NavTab, ThemeMode } from '../types';
+import { NavTab, ThemeMode, AppPage } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 
 interface NavBarProps {
   activeTab: NavTab;
+  currentPage?: AppPage;
   theme: ThemeMode;
   isSettings?: boolean;
+  isNavbarFloating?: boolean;
   onSelectTab: (tab: NavTab) => void;
+  onOpenTodo?: () => void;
   onOpenNewNote: () => void;
   onOpenDrawer: () => void;
 }
 
 export function NavBar({
   activeTab,
+  currentPage = 'main',
   theme,
   isSettings = false,
+  isNavbarFloating = false,
   onSelectTab,
+  onOpenTodo,
   onOpenNewNote,
   onOpenDrawer,
 }: NavBarProps) {
   const isDark = theme === 'dark';
-  const isHomeActive = activeTab === 'home' && !isSettings;
-  const isTodoActive = activeTab === 'todo' && !isSettings;
-  const isSafeActive = (activeTab === 'vault' || activeTab === 'safe') && !isSettings;
+  const isHomeActive = (activeTab === 'home' || activeTab === 'notes') && currentPage === 'main' && !isSettings;
+  const isTodoActive = currentPage === 'todo';
+  const isSafeActive = (activeTab === 'vault' || activeTab === 'safe') && currentPage === 'main' && !isSettings;
 
   return (
     <nav
       id="bottom-nav-bar"
       aria-label="Main Navigation"
-      className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-0 right-0 z-30 px-4 flex justify-center pointer-events-none md:hidden"
+      className={
+        isNavbarFloating
+          ? 'fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-0 right-0 z-30 px-4 flex justify-center pointer-events-none md:hidden'
+          : `fixed bottom-0 left-0 right-0 z-30 w-full backdrop-blur-2xl pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 px-4 flex justify-center pointer-events-auto md:hidden transition-colors duration-200 ${
+              isDark ? 'bg-[#09090b]/95' : 'bg-[#f4f4f6]/95'
+            }`
+      }
     >
       <div
-        className={`pointer-events-auto w-full max-w-sm rounded-full px-2 py-2 flex items-center justify-between backdrop-blur-2xl transition-colors duration-200 ${
-          isDark
-            ? 'bg-[#121212]/95 shadow-[0_12px_32px_rgba(0,0,0,0.7)]'
-            : 'bg-[#ffffff]/95 shadow-[0_12px_32px_rgba(0,0,0,0.08)]'
-        }`}
+        className={
+          isNavbarFloating
+            ? `pointer-events-auto w-full max-w-sm rounded-full px-2 py-1.5 flex items-center justify-between backdrop-blur-2xl transition-all duration-200 border ${
+                isDark
+                  ? 'bg-[#121214]/95 border-neutral-800/80 shadow-[0_12px_36px_rgba(0,0,0,0.6)]'
+                  : 'bg-white/95 border-neutral-200/80 shadow-[0_12px_36px_rgba(0,0,0,0.12)]'
+              }`
+            : 'w-full max-w-sm px-2 py-1 flex items-center justify-between'
+        }
       >
         {/* 1. Home button */}
         <button
@@ -53,7 +69,7 @@ export function NavBar({
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
-                isDark ? 'bg-[#222222]' : 'bg-[#eeeff2]'
+                isDark ? 'bg-[#222222]' : 'bg-white shadow-xs'
               }`}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />
@@ -78,7 +94,11 @@ export function NavBar({
           type="button"
           onClick={() => {
             triggerHaptic('selection');
-            onSelectTab('todo');
+            if (onOpenTodo) {
+              onOpenTodo();
+            } else {
+              onSelectTab('todo');
+            }
           }}
           className="relative flex-1 py-2.5 flex flex-col items-center justify-center rounded-full transition-colors group"
           aria-label="Todo"
@@ -87,7 +107,7 @@ export function NavBar({
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
-                isDark ? 'bg-[#222222]' : 'bg-[#eeeff2]'
+                isDark ? 'bg-[#222222]' : 'bg-white shadow-xs'
               }`}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />
@@ -141,7 +161,7 @@ export function NavBar({
             <motion.div
               layoutId="nav-pill"
               className={`absolute inset-0 rounded-full ${
-                isDark ? 'bg-[#222222]' : 'bg-[#eeeff2]'
+                isDark ? 'bg-[#222222]' : 'bg-white shadow-xs'
               }`}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />

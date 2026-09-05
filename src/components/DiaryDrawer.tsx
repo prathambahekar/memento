@@ -1,7 +1,9 @@
 import { motion, AnimatePresence } from 'motion/react';
 import {
   BookOpen,
-  FileText,
+  Feather,
+  KeyRound,
+  ListTodo,
   X,
   Trash2,
   Calendar,
@@ -11,11 +13,16 @@ import {
   Pencil,
   Play,
   Pause,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { ThemeMode, NoteItem, VoiceNoteAttachment } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { triggerHaptic } from '../lib/capacitor';
+import { ImageLightbox } from './ImageLightbox';
+import { capitalizeFirstChar } from '../lib/formatters';
 
 // Fallback audio tone generator in case note doesn't have an audio file url
 function createSampleAudioBlob(): Blob {
@@ -83,6 +90,9 @@ export function DiaryDrawer({
   const [copied, setCopied] = useState(false);
   const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
+  const [isVoiceCollapsed, setIsVoiceCollapsed] = useState(false);
+  const [isPhotosCollapsed, setIsPhotosCollapsed] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -241,18 +251,36 @@ export function DiaryDrawer({
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-[#1e1e1e] text-neutral-200' : 'bg-neutral-100 text-neutral-800'
+                    note.entryType === 'diary'
+                      ? isDark
+                        ? 'bg-purple-500/15 text-purple-300'
+                        : 'bg-purple-50 text-purple-600'
+                      : note.isTodo || note.entryType === 'todo'
+                      ? isDark
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'bg-emerald-50 text-emerald-600'
+                      : note.isSafe || note.isVault || note.entryType === 'passwords'
+                      ? isDark
+                        ? 'bg-amber-500/15 text-amber-300'
+                        : 'bg-amber-50 text-amber-600'
+                      : isDark
+                      ? 'bg-sky-500/15 text-sky-300'
+                      : 'bg-sky-50 text-sky-600'
                   }`}
                 >
-                  {note.entryType === 'notes' ? (
-                    <FileText className="w-5 h-5 stroke-[2]" />
-                  ) : (
+                  {note.entryType === 'diary' ? (
                     <BookOpen className="w-5 h-5 stroke-[2]" />
+                  ) : note.isTodo || note.entryType === 'todo' ? (
+                    <ListTodo className="w-5 h-5 stroke-[2]" />
+                  ) : note.isSafe || note.isVault || note.entryType === 'passwords' ? (
+                    <KeyRound className="w-5 h-5 stroke-[2]" />
+                  ) : (
+                    <Feather className="w-5 h-5 stroke-[2]" />
                   )}
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-lg font-bold tracking-tight truncate leading-tight">
-                    {note.title}
+                    {capitalizeFirstChar(note.title)}
                   </h2>
                   <div
                     className={`text-[11.5px] flex items-center gap-1.5 mt-0.5 ${
@@ -327,125 +355,155 @@ export function DiaryDrawer({
               {/* Voice Notes List */}
               {allVoiceNotes.length > 0 && (
                 <div className="space-y-2">
-                  <div
-                    className={`text-[10px] font-semibold uppercase tracking-wider px-1 ${
-                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+                  <button
+                    type="button"
+                    onClick={() => setIsVoiceCollapsed((prev) => !prev)}
+                    className={`w-full flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider px-1 py-1 rounded-lg transition-colors text-left ${
+                      isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-500 hover:text-neutral-800'
                     }`}
                   >
-                    Voice Notes ({allVoiceNotes.length})
-                  </div>
+                    <span>Voice Notes ({allVoiceNotes.length})</span>
+                    <span className="flex items-center gap-1 text-[11px] normal-case text-neutral-400 font-normal">
+                      {isVoiceCollapsed ? 'Show' : 'Hide'}
+                      {isVoiceCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
 
-                  {allVoiceNotes.map((vn, idx) => {
-                    const isThisPlaying = activePlayingId === vn.id;
-                    return (
-                      <div
-                        key={vn.id || idx}
-                        className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-colors ${
-                          isDark
-                            ? 'bg-[#1a1a1a] border-neutral-800 text-white'
-                            : 'bg-emerald-50/70 border-emerald-200 text-neutral-900 shadow-sm'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => togglePlayVoiceNote(vn)}
-                          className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-all shadow-sm ${
-                            isThisPlaying
-                              ? 'bg-emerald-500 text-white shadow-emerald-500/25 shadow-md'
-                              : isDark
-                              ? 'bg-[#262626] hover:bg-[#323232] text-emerald-400'
-                              : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
-                          }`}
-                          title={isThisPlaying ? 'Pause voice memo' : 'Play voice memo'}
-                          aria-label={isThisPlaying ? 'Pause voice memo' : 'Play voice memo'}
-                        >
-                          {isThisPlaying ? (
-                            <Pause className="w-4 h-4 fill-current" />
-                          ) : (
-                            <Play className="w-4 h-4 fill-current ml-0.5" />
-                          )}
-                        </button>
+                  {!isVoiceCollapsed && (
+                    <div className="space-y-2">
+                      {allVoiceNotes.map((vn, idx) => {
+                        const isThisPlaying = activePlayingId === vn.id;
+                        return (
+                          <div
+                            key={vn.id ? `diary-vn-${vn.id}-${idx}` : `diary-vn-${idx}`}
+                            className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-colors ${
+                              isDark
+                                ? 'bg-[#1a1a1a] border-neutral-800 text-white'
+                                : 'bg-emerald-50/70 border-emerald-200 text-neutral-900 shadow-sm'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => togglePlayVoiceNote(vn)}
+                              className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-all shadow-sm ${
+                                isThisPlaying
+                                  ? 'bg-emerald-500 text-white shadow-emerald-500/25 shadow-md'
+                                  : isDark
+                                  ? 'bg-[#262626] hover:bg-[#323232] text-emerald-400'
+                                  : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                              }`}
+                              title={isThisPlaying ? 'Pause voice memo' : 'Play voice memo'}
+                              aria-label={isThisPlaying ? 'Pause voice memo' : 'Play voice memo'}
+                            >
+                              {isThisPlaying ? (
+                                <Pause className="w-4 h-4 fill-current" />
+                              ) : (
+                                <Play className="w-4 h-4 fill-current ml-0.5" />
+                              )}
+                            </button>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-xs font-semibold tracking-tight truncate flex items-center gap-1.5">
-                              <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span className="truncate">{vn.name || `Voice Note ${idx + 1}`}</span>
-                            </span>
-                            <span className="text-[11px] font-mono text-neutral-400 shrink-0 ml-2">
-                              {isThisPlaying
-                                ? `${Math.floor(playbackTime / 60)}:${(playbackTime % 60)
-                                    .toString()
-                                    .padStart(2, '0')} / ${vn.duration || '0:15'}`
-                                : vn.duration || '0:15'}
-                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-xs font-semibold tracking-tight truncate flex items-center gap-1.5">
+                                  <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span className="truncate">{vn.name || `Voice Note ${idx + 1}`}</span>
+                                </span>
+                                <span className="text-[11px] font-mono text-neutral-400 shrink-0 ml-2">
+                                  {isThisPlaying
+                                    ? `${Math.floor(playbackTime / 60)}:${(playbackTime % 60)
+                                        .toString()
+                                        .padStart(2, '0')} / ${vn.duration || '0:15'}`
+                                    : vn.duration || '0:15'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1 h-3">
+                                {[40, 75, 100, 60, 30, 85, 95, 50, 70, 40, 90, 60, 35, 80, 100, 65, 45, 85].map(
+                                  (heightPercent, barIdx) => (
+                                    <div
+                                      key={`diary-wave-${idx}-${barIdx}`}
+                                      className={`flex-1 rounded-full transition-all duration-150 ${
+                                        isThisPlaying
+                                          ? 'bg-emerald-400'
+                                          : isDark
+                                          ? 'bg-neutral-700'
+                                          : 'bg-emerald-300'
+                                      }`}
+                                      style={{
+                                        height: isThisPlaying
+                                          ? `${Math.max(
+                                              20,
+                                              Math.min(
+                                                100,
+                                                heightPercent *
+                                                  (0.35 +
+                                                    Math.abs(Math.sin(barIdx * 0.8 + playbackTime * 4)) *
+                                                      0.7)
+                                              )
+                                            )}%`
+                                          : `${Math.max(25, heightPercent * 0.45)}%`,
+                                      }}
+                                    />
+                                  )
+                                )}
+                              </div>
+                            </div>
                           </div>
-
-                          <div className="flex items-center gap-1 h-3">
-                            {[40, 75, 100, 60, 30, 85, 95, 50, 70, 40, 90, 60, 35, 80, 100, 65, 45, 85].map(
-                              (heightPercent, barIdx) => (
-                                <div
-                                  key={barIdx}
-                                  className={`flex-1 rounded-full transition-all duration-150 ${
-                                    isThisPlaying
-                                      ? 'bg-emerald-400'
-                                      : isDark
-                                      ? 'bg-neutral-700'
-                                      : 'bg-emerald-300'
-                                  }`}
-                                  style={{
-                                    height: isThisPlaying
-                                      ? `${Math.max(
-                                          20,
-                                          Math.min(
-                                            100,
-                                            heightPercent *
-                                              (0.35 +
-                                                Math.abs(Math.sin(barIdx * 0.8 + playbackTime * 4)) *
-                                                  0.7)
-                                          )
-                                        )}%`
-                                      : `${Math.max(25, heightPercent * 0.45)}%`,
-                                  }}
-                                />
-                              )
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Photos Gallery */}
               {allImages.length > 0 && (
                 <div className="space-y-2">
-                  <div
-                    className={`text-[10px] font-semibold uppercase tracking-wider px-1 ${
-                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+                  <button
+                    type="button"
+                    onClick={() => setIsPhotosCollapsed((prev) => !prev)}
+                    className={`w-full flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider px-1 py-1 rounded-lg transition-colors text-left ${
+                      isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-500 hover:text-neutral-800'
                     }`}
                   >
-                    Attached Photos ({allImages.length})
-                  </div>
-                  <div
-                    className={`grid gap-2 ${
-                      allImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
-                    }`}
-                  >
-                    {allImages.map((imgSrc, imgIdx) => (
-                      <div
-                        key={imgIdx}
-                        className="rounded-2xl overflow-hidden max-h-60 border border-neutral-800 bg-neutral-900/40"
-                      >
-                        <img
-                          src={imgSrc}
-                          alt={`${note.title} photo ${imgIdx + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    ))}
-                  </div>
+                    <span>Attached Photos ({allImages.length})</span>
+                    <span className="flex items-center gap-1 text-[11px] normal-case text-neutral-400 font-normal">
+                      {isPhotosCollapsed ? 'Show' : 'Hide'}
+                      {isPhotosCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {!isPhotosCollapsed && (
+                    <div
+                      className={`grid gap-2 ${
+                        allImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+                      }`}
+                    >
+                      {allImages.map((imgSrc, imgIdx) => (
+                        <div
+                          key={`diary-img-${imgIdx}`}
+                          onClick={() => setLightboxImg(imgSrc)}
+                          className={`group relative rounded-2xl overflow-hidden max-h-60 border cursor-zoom-in active:scale-[0.98] transition-all ${
+                            isDark
+                              ? 'border-neutral-800 bg-neutral-900/40'
+                              : 'border-neutral-200/40 bg-neutral-50/50'
+                          }`}
+                          title="Click to view full screen"
+                        >
+                          <img
+                            src={imgSrc}
+                            alt={`${note.title} photo ${imgIdx + 1}`}
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1 shadow-lg backdrop-blur-xs">
+                              <Maximize2 className="w-3 h-3" /> Fullscreen
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -498,7 +556,7 @@ export function DiaryDrawer({
                           const taskText = match[4];
                           return (
                             <div
-                              key={lIdx}
+                              key={`diary-task-${lIdx}`}
                               className="flex items-start gap-2.5 my-1 text-sm group cursor-pointer"
                               onClick={() => handleToggleContentCheckbox(lIdx)}
                             >
@@ -531,10 +589,10 @@ export function DiaryDrawer({
                           );
                         }
                         if (!line.trim()) {
-                          return <div key={lIdx} className="h-2" />;
+                          return <div key={`diary-spacer-${lIdx}`} className="h-2" />;
                         }
                         return (
-                          <p key={lIdx} className="whitespace-pre-wrap leading-relaxed">
+                          <p key={`diary-p-${lIdx}`} className="whitespace-pre-wrap leading-relaxed">
                             {line}
                           </p>
                         );
@@ -551,6 +609,13 @@ export function DiaryDrawer({
           </motion.div>
         </div>
       )}
+
+      {/* Fullscreen Image Lightbox */}
+      <ImageLightbox
+        isOpen={!!lightboxImg}
+        src={lightboxImg}
+        onClose={() => setLightboxImg(null)}
+      />
     </AnimatePresence>
   );
 }

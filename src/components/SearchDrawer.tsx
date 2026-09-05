@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, X, Clock, FileText, Sparkles, Plus, KeyRound } from 'lucide-react';
 import { ThemeMode, CategoryFilter, getNoteCategory } from '../types';
@@ -48,19 +48,31 @@ export function SearchDrawer({
     }
   }, [isOpen]);
 
-  const filteredNotes = notes.filter((n) => {
-    if (activeCategory !== 'all') {
-      const cat = getNoteCategory(n);
-      if (cat !== activeCategory) return false;
-    }
-    if (!query.trim()) return true;
-    const q = query.toLowerCase();
-    return (
-      n.title.toLowerCase().includes(q) ||
-      n.content.toLowerCase().includes(q) ||
-      (n.email && n.email.toLowerCase().includes(q))
-    );
-  });
+  const filteredNotes = useMemo(() => {
+    const seen = new Set<string>();
+    const list = notes.filter((n) => {
+      if (activeCategory !== 'all') {
+        const cat = getNoteCategory(n);
+        if (cat !== activeCategory) return false;
+      }
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        n.title.toLowerCase().includes(q) ||
+        n.content.toLowerCase().includes(q) ||
+        (n.email && n.email.toLowerCase().includes(q))
+      );
+    });
+
+    return list.map((n, idx) => {
+      let id = n.id ? String(n.id).trim() : `search-note-${idx}`;
+      if (!id || seen.has(id)) {
+        id = `${id || 'note'}-${idx}-${seen.size}`;
+      }
+      seen.add(id);
+      return n.id === id ? n : { ...n, id };
+    });
+  }, [notes, activeCategory, query]);
 
   const handleSelect = (note: NoteItem) => {
     onSelectNote(note);
@@ -220,7 +232,7 @@ export function SearchDrawer({
 
                     return (
                       <div
-                        key={note.id}
+                        key={`search-result-${note.id}`}
                         onClick={() => handleSelect(note)}
                         role="button"
                         tabIndex={0}
@@ -237,14 +249,15 @@ export function SearchDrawer({
                           <div className="flex items-center gap-1.5 shrink-0 ml-2">
                             {isPassKey && (
                               <span
-                                className={`px-1.5 py-0.5 rounded-full text-[9.5px] font-medium flex items-center gap-1 ${
+                                className={`w-4 h-4 md:w-auto md:h-auto p-0.5 md:px-1.5 md:py-0.5 rounded-full text-[9.5px] font-medium inline-flex items-center justify-center md:gap-1 ${
                                   isDark
                                     ? 'bg-[#262626] text-neutral-300'
                                     : 'bg-neutral-200 text-neutral-700'
                                 }`}
+                                title="Key"
                               >
-                                <KeyRound className="w-2.5 h-2.5" />
-                                <span>Key</span>
+                                <KeyRound className="w-2.5 h-2.5 shrink-0" />
+                                <span className="hidden md:inline">Key</span>
                               </span>
                             )}
                             <span
@@ -266,7 +279,13 @@ export function SearchDrawer({
                           </p>
                         )}
                         {!isPassKey && (note.images?.[0] || note.imageUrl) && (
-                          <div className="mt-2 rounded-xl overflow-hidden max-h-32 w-full bg-neutral-100 dark:bg-neutral-800">
+                          <div
+                            className={`mt-2 rounded-xl overflow-hidden max-h-32 w-full border ${
+                              isDark
+                                ? 'bg-neutral-800 border-neutral-800/80'
+                                : 'bg-neutral-50/50 border-neutral-200/40'
+                            }`}
+                          >
                             <img
                               src={note.images?.[0] || note.imageUrl}
                               alt=""
@@ -322,9 +341,9 @@ export function SearchDrawer({
                       <span>Suggested Topics</span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {recentTags.map((tag) => (
+                      {recentTags.map((tag, tIdx) => (
                         <button
-                          key={tag}
+                          key={`search-tag-${tag}-${tIdx}`}
                           type="button"
                           onClick={() => setQuery(tag)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-medium active:scale-95 transition-all ${

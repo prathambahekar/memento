@@ -11,6 +11,16 @@ export type NavTab =
   | 'archive';
 export type ThemeMode = 'dark' | 'light';
 export type EntryType = 'diary' | 'passwords' | 'todo' | 'notes';
+export type AppPage = 'main' | 'settings' | 'todo';
+
+export interface StandaloneTodoItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  category?: string;
+  priority?: 'low' | 'medium' | 'high';
+  createdAt: number;
+}
 
 export interface DrawerMenuItem {
   id: string;
@@ -43,6 +53,7 @@ export interface NoteItem {
   isTodo?: boolean;
   isVault?: boolean;
   isSafe?: boolean;
+  isDiary?: boolean;
   isArchived?: boolean;
   entryType?: EntryType;
   email?: string;

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ThemeMode, NoteItem, TodoSubItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
+import { capitalizeFirstChar } from '../lib/formatters';
 
 interface TodoDrawerProps {
   isOpen: boolean;
@@ -25,47 +26,51 @@ interface TodoDrawerProps {
 }
 
 export function parseTodoItemsFromNote(note: NoteItem): TodoSubItem[] {
+  let rawItems: TodoSubItem[] = [];
+
   if (note.todoItems && note.todoItems.length > 0) {
-    return note.todoItems;
-  }
-  if (!note.content) return [];
+    rawItems = note.todoItems;
+  } else if (note.content) {
+    const text = note.content;
+    const bracketMatches = [...text.matchAll(/\[(x|X|\s*)\]\s*([^\[\n\r]+)/g)];
 
-  const text = note.content;
-  const items: TodoSubItem[] = [];
-
-  // Match pattern like "[ ] task" or "[] task" or "[x] task"
-  const bracketMatches = [...text.matchAll(/\[(x|X|\s*)\]\s*([^\[\n\r]+)/g)];
-  if (bracketMatches.length > 0) {
-    bracketMatches.forEach((m, idx) => {
-      const isCompleted = m[1].toLowerCase() === 'x';
-      const taskText = m[2].trim();
-      if (taskText) {
-        items.push({
-          id: `todo-${idx}-${taskText.slice(0, 8)}`,
-          text: taskText,
-          completed: isCompleted,
-        });
-      }
-    });
-    return items;
-  }
-
-  // If entryType is 'todo' or isTodo, match lines
-  if (note.entryType === 'todo' || note.isTodo) {
-    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-    lines.forEach((line, idx) => {
-      const cleanLine = line.replace(/^[-*•]\s*/, '').trim();
-      if (cleanLine) {
-        items.push({
-          id: `todo-${idx}-${cleanLine.slice(0, 8)}`,
-          text: cleanLine,
-          completed: false,
-        });
-      }
-    });
+    if (bracketMatches.length > 0) {
+      bracketMatches.forEach((m, idx) => {
+        const isCompleted = m[1].toLowerCase() === 'x';
+        const taskText = m[2].trim();
+        if (taskText) {
+          rawItems.push({
+            id: `todo-${note.id || 'note'}-${idx}`,
+            text: taskText,
+            completed: isCompleted,
+          });
+        }
+      });
+    } else if (note.entryType === 'todo' || note.isTodo) {
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      lines.forEach((line, idx) => {
+        const cleanLine = line.replace(/^[-*•]\s*/, '').trim();
+        if (cleanLine) {
+          rawItems.push({
+            id: `todo-${note.id || 'note'}-${idx}`,
+            text: cleanLine,
+            completed: false,
+          });
+        }
+      });
+    }
   }
 
-  return items;
+  // Deduplicate IDs stably
+  const seenIds = new Set<string>();
+  return rawItems.map((item, idx) => {
+    let itemId = item.id ? String(item.id).trim() : `todo-${note.id || 'note'}-${idx}`;
+    if (!itemId || seenIds.has(itemId)) {
+      itemId = `todo-${note.id || 'note'}-${idx}-${seenIds.size}`;
+    }
+    seenIds.add(itemId);
+    return { ...item, id: itemId };
+  });
 }
 
 export function TodoDrawer({
@@ -181,14 +186,14 @@ export function TodoDrawer({
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-[#1e1e1e] text-amber-400' : 'bg-amber-50 text-amber-600'
+                    isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-600'
                   }`}
                 >
                   <ListTodo className="w-5 h-5 stroke-[2]" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-lg font-bold tracking-tight truncate leading-tight">
-                    {note.title || 'Todo Checklist'}
+                    {capitalizeFirstChar(note.title) || 'Todo Checklist'}
                   </h2>
                   <div
                     className={`text-[11.5px] flex items-center gap-1.5 mt-0.5 ${
@@ -341,7 +346,7 @@ export function TodoDrawer({
               ) : (
                 currentItems.map((item) => (
                   <motion.div
-                    key={item.id}
+                    key={`drawer-todo-${item.id}`}
                     layout
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}

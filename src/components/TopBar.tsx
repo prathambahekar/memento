@@ -60,17 +60,17 @@ export function TopBar({
         </div>
       </div>
 
-      {/* Center: Desktop Centered Bigger Search Bar */}
-      <div className="hidden md:flex md:absolute md:left-1/2 md:-translate-x-1/2 items-center pointer-events-auto">
+      {/* Center: Desktop Flexible Search Bar */}
+      <div className="hidden md:flex flex-1 justify-center max-w-sm lg:max-w-md xl:max-w-lg mx-4">
         <div
-          className={`flex items-center gap-3 px-4 md:px-5 h-11 md:h-12 rounded-full w-80 md:w-[26rem] lg:w-[32rem] xl:w-[38rem] transition-all duration-200 group border shadow-xs ${
+          className={`flex items-center gap-2.5 px-4 h-10 lg:h-11 rounded-full w-full transition-all duration-200 group border shadow-xs ${
             isDark
               ? 'bg-[#151515] hover:bg-[#1a1a1a] border-neutral-800/80 focus-within:border-neutral-600 focus-within:bg-[#181818] focus-within:ring-2 focus-within:ring-white/5'
               : 'bg-[#eeeff2] hover:bg-[#e6e8ed] border-neutral-200/70 focus-within:border-neutral-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-black/5'
           }`}
         >
           <Search
-            className={`w-4.5 h-4.5 md:w-5 md:h-5 shrink-0 transition-colors ${
+            className={`w-4.5 h-4.5 shrink-0 transition-colors ${
               isDark
                 ? 'text-neutral-500 group-focus-within:text-neutral-200'
                 : 'text-neutral-400 group-focus-within:text-neutral-800'
@@ -83,7 +83,7 @@ export function TopBar({
             value={searchQuery}
             onChange={(e) => onSearchChange?.(e.target.value)}
             placeholder="Search notes, checklists, keys..."
-            className={`w-full bg-transparent text-sm md:text-[14.5px] font-normal outline-none transition-colors ${
+            className={`w-full bg-transparent text-sm font-normal outline-none transition-colors ${
               isDark
                 ? 'text-white placeholder-neutral-500'
                 : 'text-neutral-900 placeholder-neutral-400'

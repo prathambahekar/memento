@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, ChangeEvent } from 'react';
+import { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Check,
@@ -6,7 +6,7 @@ import {
   BookOpen,
   KeyRound,
   ListTodo,
-  FileText,
+  Feather,
   Eye,
   EyeOff,
   Plus,
@@ -25,6 +25,8 @@ import { ThemeMode, EntryType, TodoSubItem, NoteItem, VoiceNoteAttachment } from
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { parseTodoItemsFromNote } from './TodoDrawer';
 import { triggerHaptic } from '../lib/capacitor';
+import { ImageLightbox } from './ImageLightbox';
+import { capitalizeFirstChar } from '../lib/formatters';
 
 interface NewNoteModalProps {
   isOpen: boolean;
@@ -93,6 +95,9 @@ function createSampleAudioBlob(): Blob {
 
   return new Blob([buffer], { type: 'audio/wav' });
 }
+
+const generateTodoId = () =>
+  `todo-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 export function NewNoteModal({
   isOpen,
@@ -198,7 +203,16 @@ export function NewNoteModal({
         setShowPassword(false);
 
         if (editingNote.todoItems && editingNote.todoItems.length > 0) {
-          setTodoItems(editingNote.todoItems);
+          const seenIds = new Set<string>();
+          const sanitized = editingNote.todoItems.map((item, idx) => {
+            let itemId = item.id ? String(item.id).trim() : `todo-item-${idx}`;
+            if (!itemId || seenIds.has(itemId)) {
+              itemId = `todo-item-${idx}-${seenIds.size}-${Math.random().toString(36).substring(2, 6)}`;
+            }
+            seenIds.add(itemId);
+            return { ...item, id: itemId };
+          });
+          setTodoItems(sanitized);
         } else if (editingNote.isTodo || determinedType === 'todo') {
           setTodoItems(parseTodoItemsFromNote(editingNote));
         } else {
@@ -315,31 +329,41 @@ export function NewNoteModal({
 
   const typeConfig: Record<
     EntryType,
-    { label: string; icon: typeof BookOpen; placeholder: string; desc: string }
+    {
+      label: string;
+      icon: typeof BookOpen;
+      placeholder: string;
+      desc: string;
+      getBgClass: (isDark: boolean) => string;
+    }
   > = {
     notes: {
       label: 'Quick Note',
-      icon: FileText,
+      icon: Feather,
       placeholder: 'Standard scratchpad',
       desc: 'Simple note',
+      getBgClass: (dark) => (dark ? 'bg-sky-500/15 text-sky-300' : 'bg-sky-50 text-sky-600'),
     },
     diary: {
       label: 'Diary',
       icon: BookOpen,
       placeholder: 'Diary reflections & notes',
       desc: 'Journaling & reflections',
+      getBgClass: (dark) => (dark ? 'bg-purple-500/15 text-purple-300' : 'bg-purple-50 text-purple-600'),
     },
     passwords: {
       label: 'Pass/Keys',
       icon: KeyRound,
       placeholder: 'Store logins, secrets & keys',
       desc: 'Email, account & password',
+      getBgClass: (dark) => (dark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-600'),
     },
     todo: {
       label: 'Todo',
       icon: ListTodo,
       placeholder: 'Tasks & checklist items',
       desc: 'Interactive action list',
+      getBgClass: (dark) => (dark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-600'),
     },
   };
 
@@ -348,7 +372,7 @@ export function NewNoteModal({
       setTodoItems((prev) => [
         ...prev,
         {
-          id: Date.now().toString(),
+          id: generateTodoId(),
           text: newTodoInput.trim(),
           completed: false,
         },
@@ -376,7 +400,7 @@ export function NewNoteModal({
       let loadedCount = 0;
       const newImages: string[] = [];
 
-      fileList.forEach((file) => {
+      fileList.forEach((file: File) => {
         const reader = new FileReader();
         reader.onload = (event) => {
           if (event.target?.result) {
@@ -412,7 +436,7 @@ export function NewNoteModal({
     if (entryType === 'todo') {
       setTodoItems((prev) => [
         ...prev,
-        { id: Date.now().toString(), text: `Note created ${stamp}`, completed: false },
+        { id: generateTodoId(), text: `Note created ${stamp}`, completed: false },
       ]);
     } else {
       const textarea = contentTextareaRef.current;
@@ -441,7 +465,7 @@ export function NewNoteModal({
     if (entryType === 'todo') {
       setTodoItems((prev) => [
         ...prev,
-        { id: Date.now().toString(), text: 'New task', completed: false },
+        { id: generateTodoId(), text: 'New task', completed: false },
       ]);
       triggerHaptic('selection');
       return;
@@ -470,7 +494,7 @@ export function NewNoteModal({
     }
   };
 
-  const handleContentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleContentKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
       const textarea = e.currentTarget;
       const start = textarea.selectionStart;
@@ -511,6 +535,8 @@ export function NewNoteModal({
   };
 
   // Voice Note Recording (via '+' sub-menu)
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+
   const startVoiceRecording = async () => {
     setIsPlusMenuOpen(false);
     triggerHaptic('medium');
@@ -763,7 +789,7 @@ export function NewNoteModal({
           if (entryType === 'todo') {
             setTodoItems((prev) => [
               ...prev,
-              { id: Date.now().toString(), text, completed: false },
+              { id: generateTodoId(), text, completed: false },
             ]);
           } else if (entryType === 'passwords') {
             setSecretNotes((prev) => (prev ? `${prev}\n• ${text}` : `• ${text}`));
@@ -817,7 +843,7 @@ export function NewNoteModal({
 
     if (editingNote && onUpdateNote) {
       if (entryType === 'passwords') {
-        finalTitle = serviceName.trim() || emailUsername.trim() || 'Account Key';
+        finalTitle = capitalizeFirstChar(serviceName.trim() || emailUsername.trim() || 'Account Key');
         const lines = [];
         if (emailUsername) lines.push(`Email/Username: ${emailUsername}`);
         if (passwordValue) lines.push(`Password: ${passwordValue}`);
@@ -842,7 +868,7 @@ export function NewNoteModal({
           images: attachedImages.length > 0 ? attachedImages : undefined,
         });
       } else if (entryType === 'todo') {
-        finalTitle = title.trim() || 'Todo Checklist';
+        finalTitle = capitalizeFirstChar(title.trim() || 'Todo Checklist');
         const finalTodoItems = [...todoItems];
         if (newTodoInput.trim()) {
           finalTodoItems.push({
@@ -871,7 +897,7 @@ export function NewNoteModal({
           images: attachedImages.length > 0 ? attachedImages : undefined,
         });
       } else {
-        finalTitle = title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note');
+        finalTitle = capitalizeFirstChar(title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note'));
         onUpdateNote({
           ...editingNote,
           title: finalTitle,
@@ -886,7 +912,7 @@ export function NewNoteModal({
         });
       }
     } else if (entryType === 'passwords') {
-      finalTitle = serviceName.trim() || emailUsername.trim() || 'Account Key';
+      finalTitle = capitalizeFirstChar(serviceName.trim() || emailUsername.trim() || 'Account Key');
       const lines = [];
       if (emailUsername) lines.push(`Email/Username: ${emailUsername}`);
       if (passwordValue) lines.push(`Password: ${passwordValue}`);
@@ -907,7 +933,7 @@ export function NewNoteModal({
         images: attachedImages.length > 0 ? attachedImages : undefined,
       });
     } else if (entryType === 'todo') {
-      finalTitle = title.trim() || 'Todo Checklist';
+      finalTitle = capitalizeFirstChar(title.trim() || 'Todo Checklist');
       const finalTodoItems = [...todoItems];
       if (newTodoInput.trim()) {
         finalTodoItems.push({
@@ -933,7 +959,7 @@ export function NewNoteModal({
         images: attachedImages.length > 0 ? attachedImages : undefined,
       });
     } else {
-      finalTitle = title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note');
+      finalTitle = capitalizeFirstChar(title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note'));
       onSaveNote(finalTitle, finalContent, {
         entryType,
         hasVoiceNote: hasAnyVoice,
@@ -993,7 +1019,7 @@ export function NewNoteModal({
               <div className="flex items-center gap-2">
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                    isDark ? 'bg-[#1e1e1e] text-neutral-300' : 'bg-neutral-100 text-neutral-700'
+                    typeConfig[entryType].getBgClass(isDark)
                   }`}
                 >
                   <ActiveIcon className="w-3.5 h-3.5 stroke-[2]" />
@@ -1072,13 +1098,7 @@ export function NewNoteModal({
                             >
                               <div
                                 className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-                                  isSelected
-                                    ? isDark
-                                      ? 'bg-neutral-700 text-white'
-                                      : 'bg-neutral-200 text-neutral-900'
-                                    : isDark
-                                    ? 'bg-neutral-800 text-neutral-400'
-                                    : 'bg-neutral-100 text-neutral-500'
+                                  item.getBgClass(isDark)
                                 }`}
                               >
                                 <ItemIcon className="w-3.5 h-3.5" />
@@ -1205,7 +1225,7 @@ export function NewNoteModal({
                               : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-200'
                           }`}
                         >
-                          <FileText className="w-3.5 h-3.5" />
+                          <Feather className="w-3.5 h-3.5" />
                         </button>
                       </div>
                       <input
@@ -1432,7 +1452,7 @@ export function NewNoteModal({
                       ) : (
                         todoItems.map((item) => (
                           <div
-                            key={item.id}
+                            key={`modal-todo-${item.id}`}
                             className={`flex items-center justify-between p-2.5 rounded-2xl transition-all ${
                               isDark
                                 ? 'bg-[#181818] hover:bg-[#202020]'
@@ -1558,21 +1578,25 @@ export function NewNoteModal({
                       >
                         {attachedImages.map((imgSrc, idx) => (
                           <div
-                            key={idx}
-                            className={`relative rounded-2xl overflow-hidden border shadow-sm group aspect-video flex items-center justify-center ${
+                            key={`attached-img-${idx}`}
+                            onClick={() => setLightboxImg(imgSrc)}
+                            className={`relative rounded-2xl overflow-hidden border shadow-xs group aspect-video flex items-center justify-center cursor-pointer ${
                               isDark
                                 ? 'bg-[#141414] border-neutral-800/80'
-                                : 'bg-neutral-100 border-neutral-200'
+                                : 'bg-neutral-50/50 border-neutral-200/40'
                             }`}
                           >
                             <img
                               src={imgSrc}
                               alt={`Attached note visual ${idx + 1}`}
-                              className="w-full h-full object-cover rounded-2xl"
+                              className="w-full h-full object-cover rounded-2xl transition-transform duration-300 group-hover:scale-105"
                             />
                             <button
                               type="button"
-                              onClick={() => handleDeletePhoto(idx)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeletePhoto(idx);
+                              }}
                               className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/75 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center shadow-lg transition-all active:scale-90 z-10"
                               title="Delete photo"
                               aria-label={`Delete photo ${idx + 1}`}
@@ -1661,7 +1685,7 @@ export function NewNoteModal({
                           const isThisPlaying = activePlayingId === vn.id;
                           return (
                             <div
-                              key={vn.id || index}
+                              key={vn.id ? `modal-vn-${vn.id}-${index}` : `modal-vn-${index}`}
                               className={`p-3 rounded-2xl border flex items-center gap-3 transition-colors ${
                                 isDark
                                   ? 'bg-[#181818] border-neutral-800 text-white'
@@ -1710,7 +1734,7 @@ export function NewNoteModal({
                                   {[30, 65, 90, 50, 25, 75, 85, 45, 60, 35, 80, 55, 30, 70, 95, 60, 40, 75].map(
                                     (heightPercent, barIdx) => (
                                       <div
-                                        key={barIdx}
+                                        key={`modal-vn-bar-${index}-${barIdx}`}
                                         className={`flex-1 rounded-full transition-all duration-150 ${
                                           isThisPlaying
                                             ? 'bg-emerald-400'
@@ -1994,6 +2018,13 @@ export function NewNoteModal({
           </motion.div>
         </div>
       )}
+
+      {/* Lightbox Modal for fullscreen image preview */}
+      <ImageLightbox
+        isOpen={!!lightboxImg}
+        src={lightboxImg}
+        onClose={() => setLightboxImg(null)}
+      />
     </AnimatePresence>
   );
 }

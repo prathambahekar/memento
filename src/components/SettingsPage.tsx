@@ -12,18 +12,23 @@ import {
   Moon,
   Sun,
   X,
+  Search,
 } from 'lucide-react';
 import { ThemeMode } from '../types';
 import { NoteItem } from './EmptyBody';
 import { DataDrawer } from './DataDrawer';
+import { AppearanceDrawer } from './AppearanceDrawer';
 import { useIsDesktop } from '../hooks/useIsDesktop';
-import { getAppVersion } from '../lib/capacitor';
+import { getAppVersion, triggerHaptic } from '../lib/capacitor';
 
 interface SettingsPageProps {
   theme: ThemeMode;
   notes: NoteItem[];
+  isNavbarFloating?: boolean;
   onBack: () => void;
+  onOpenSearch?: () => void;
   onToggleTheme: () => void;
+  onToggleNavbarFloating?: () => void;
   onClearAllNotes?: () => void;
   onImportNotes?: (notes: NoteItem[]) => void;
 }
@@ -31,14 +36,18 @@ interface SettingsPageProps {
 export function SettingsPage({
   theme,
   notes,
+  isNavbarFloating = false,
   onBack,
+  onOpenSearch,
   onToggleTheme,
+  onToggleNavbarFloating,
   onClearAllNotes,
   onImportNotes,
 }: SettingsPageProps) {
   const isDark = theme === 'dark';
   const isDesktop = useIsDesktop();
   const [activeModal, setActiveModal] = useState<'none' | 'data' | 'info'>('none');
+  const [isAppearanceDrawerOpen, setIsAppearanceDrawerOpen] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
   const [appInfo, setAppInfo] = useState<{ name: string; version: string; build: string }>({
     name: 'Memento',
@@ -74,14 +83,14 @@ export function SettingsPage({
       }`}
     >
       {/* Top Bar with Back Button */}
-      <header className="px-5 md:px-8 pt-4 md:pt-6 pb-3 flex items-center justify-between z-10 shrink-0 max-w-2xl mx-auto w-full">
-        <div className="flex items-center gap-3">
+      <header className="px-3 md:px-6 pt-4 md:pt-6 pb-3 flex items-center justify-between z-10 shrink-0 max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto w-full">
+        <div className="flex items-center gap-2">
           <button
             id="settings-back-btn"
             type="button"
             onClick={onBack}
             aria-label="Back"
-            className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+            className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
               isDark
                 ? 'bg-[#181818] text-neutral-300 hover:text-white hover:bg-[#222222]'
                 : 'bg-white text-neutral-700 hover:text-neutral-900 hover:bg-[#eceef2] shadow-sm'
@@ -91,23 +100,43 @@ export function SettingsPage({
           </button>
           <h2 className="text-xl font-bold tracking-tight">Settings</h2>
         </div>
+
+        {onOpenSearch && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            aria-label="Search"
+            className={`md:hidden w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+              isDark
+                ? 'bg-[#181818] text-neutral-300 hover:text-white hover:bg-[#222222]'
+                : 'bg-white text-neutral-700 hover:text-neutral-900 hover:bg-[#eceef2] shadow-sm'
+            }`}
+            title="Search notes and tasks"
+          >
+            <Search className="w-4.5 h-4.5" />
+          </button>
+        )}
       </header>
 
       {/* Main Settings Content List */}
-      <main className="flex-1 min-h-0 max-w-2xl mx-auto w-full px-5 md:px-8 pt-2 md:pt-6 pb-28 md:pb-10 overflow-y-auto overscroll-contain no-scrollbar space-y-6">
+      <main className="flex-1 min-h-0 max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-5 md:px-8 pt-2 md:pt-6 pb-28 md:pb-10 overflow-y-auto overscroll-contain no-scrollbar space-y-6">
         {/* SECTION 1: APPEARANCE */}
-        <section>
+        <section className="space-y-3">
           <div
-            className={`text-[11px] font-bold tracking-wider uppercase mb-2.5 px-1 ${
+            className={`text-[11px] font-bold tracking-wider uppercase px-1 ${
               isDark ? 'text-neutral-500' : 'text-neutral-500'
             }`}
           >
             GENERAL & CUSTOMIZATION
           </div>
 
+          {/* Theme Option */}
           <div
             id="setting-appearance-card"
-            onClick={onToggleTheme}
+            onClick={() => {
+              triggerHaptic('selection');
+              setIsAppearanceDrawerOpen(true);
+            }}
             role="button"
             tabIndex={0}
             className={`w-full p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all shadow-sm ${
@@ -117,7 +146,6 @@ export function SettingsPage({
             }`}
           >
             <div className="flex items-center gap-3.5 min-w-0 pr-2">
-              {/* Left icon box */}
               <div
                 className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
                   isDark ? 'bg-[#202020] text-white' : 'bg-[#f0f1f4] text-neutral-800'
@@ -126,37 +154,21 @@ export function SettingsPage({
                 <Palette className="w-5 h-5 stroke-[1.8]" />
               </div>
 
-              {/* Title & Description */}
               <div className="min-w-0">
                 <h3 className="text-sm font-bold tracking-tight truncate leading-snug">
-                  Appearance & Theme
+                  Appearance & Customization
                 </h3>
                 <p
                   className={`text-xs truncate ${
                     isDark ? 'text-neutral-400' : 'text-neutral-500'
                   }`}
                 >
-                  {isDark ? 'Dark Mode active' : 'Light Mode active'} · Tap to switch
+                  Theme & navigation layout
                 </p>
               </div>
             </div>
 
-            {/* Right pill & chevron */}
             <div className="flex items-center gap-2 shrink-0">
-              <span
-                className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 ${
-                  isDark
-                    ? 'bg-[#202020] text-neutral-200'
-                    : 'bg-[#f0f1f4] text-neutral-700'
-                }`}
-              >
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isDark ? 'bg-neutral-300' : 'bg-amber-500'
-                  }`}
-                />
-                {isDark ? 'Dark Mode' : 'Light Mode'}
-              </span>
               <ChevronRight
                 className={`w-4 h-4 ${
                   isDark ? 'text-neutral-500' : 'text-neutral-400'
@@ -211,15 +223,6 @@ export function SettingsPage({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <span
-                className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  isDark
-                    ? 'bg-[#202020] text-neutral-200'
-                    : 'bg-[#f0f1f4] text-neutral-700'
-                }`}
-              >
-                Backup & Export
-              </span>
               <ChevronRight
                 className={`w-4 h-4 ${
                   isDark ? 'text-neutral-500' : 'text-neutral-400'
@@ -420,6 +423,16 @@ export function SettingsPage({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Appearance Drawer Sheet */}
+      <AppearanceDrawer
+        isOpen={isAppearanceDrawerOpen}
+        onClose={() => setIsAppearanceDrawerOpen(false)}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        isNavbarFloating={isNavbarFloating}
+        onToggleNavbarFloating={onToggleNavbarFloating || (() => {})}
+      />
     </motion.div>
   );
 }

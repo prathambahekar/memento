@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ThemeMode, NoteItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
+import { capitalizeFirstChar } from '../lib/formatters';
 
 interface PassKeyDrawerProps {
   isOpen: boolean;
@@ -115,14 +116,14 @@ export function PassKeyDrawer({
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-[#1e1e1e] text-neutral-200' : 'bg-neutral-100 text-neutral-800'
+                    isDark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-600'
                   }`}
                 >
                   <KeyRound className="w-4 h-4 stroke-[2]" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold tracking-tight truncate leading-tight">
-                    {note.title}
+                    {capitalizeFirstChar(note.title)}
                   </h2>
                   <div
                     className={`text-[11px] flex items-center gap-1.5 mt-0.5 ${

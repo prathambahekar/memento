@@ -10,6 +10,7 @@ import {
   Send,
   Check,
   AlertTriangle,
+  HardDrive,
 } from 'lucide-react';
 import { ThemeMode, NoteItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
@@ -67,34 +68,31 @@ export function DataDrawer({
     const fileName = `memento-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const file = new File([jsonString], fileName, { type: 'application/json' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: 'memento Backup',
-          text: `Backup of ${notes.length} notes from memento`,
-        });
-        showToast('Shared backup file successfully');
-        return;
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-      }
-    }
-
+    // Try Web Share API (opens native Windows / OS share sheet)
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: 'memento Backup',
-          text: jsonString,
-        });
-        showToast('Shared backup successfully');
-        return;
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'memento Backup',
+            text: `Backup of ${notes.length} notes from memento`,
+          });
+          showToast('Opened share dialog');
+          return;
+        } else {
+          await navigator.share({
+            title: 'memento Backup',
+            text: `memento Notes Backup (${notes.length} notes)`,
+          });
+          showToast('Opened share dialog');
+          return;
+        }
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
       }
     }
 
-    // Fallback: Copy to clipboard and trigger download
+    // Fallback: Copy to clipboard and trigger file download
     try {
       await navigator.clipboard.writeText(jsonString);
       showToast('Copied JSON backup to clipboard');
@@ -392,7 +390,7 @@ export function DataDrawer({
                               : 'bg-neutral-200/70 text-neutral-800'
                           }`}
                         >
-                          <Download className="w-5 h-5 stroke-[2]" />
+                          <HardDrive className="w-5 h-5 stroke-[2]" />
                         </div>
                         <div>
                           <div className="text-sm font-bold tracking-tight">
@@ -439,22 +437,6 @@ export function DataDrawer({
                         </div>
                       </div>
                       <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
-                    </button>
-                  </div>
-
-                  {/* Cancel Button */}
-                  <div className="pt-2">
-                    <button
-                      id="export-cancel-btn"
-                      type="button"
-                      onClick={() => setCurrentView('main')}
-                      className={`w-full py-3 rounded-2xl font-semibold text-xs tracking-tight transition-all active:scale-[0.99] ${
-                        isDark
-                          ? 'bg-[#1e1e1e] hover:bg-[#262626] text-neutral-300 hover:text-white'
-                          : 'bg-[#f0f1f4] hover:bg-[#eaecee] text-neutral-800'
-                      }`}
-                    >
-                      Cancel
                     </button>
                   </div>
                 </div>

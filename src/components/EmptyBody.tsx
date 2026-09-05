@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { TouchEvent, MouseEvent } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -13,13 +13,12 @@ import {
   Archive,
   Check,
   Image as ImageIcon,
-  Play,
-  Pause,
 } from 'lucide-react';
 import { NavTab, ThemeMode, NoteItem, TodoSubItem } from '../types';
 import { parseTodoItemsFromNote } from './TodoDrawer';
 import { CardContextMenu } from './CardContextMenu';
 import { triggerHaptic } from '../lib/capacitor';
+import { capitalizeFirstChar } from '../lib/formatters';
 
 function createSampleAudioBlob(): Blob {
   const sampleRate = 44100;
@@ -102,6 +101,32 @@ interface EmptyBodyProps {
   onDeleteNote?: (noteId: string) => void;
   onToggleFavorite?: (noteId: string) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
+  onReorderNotes?: (reorderedNotes: NoteItem[]) => void;
+}
+
+function reorderNotesWithFilter(
+  allNotes: NoteItem[],
+  draggedId: string,
+  targetId: string
+): NoteItem[] {
+  if (!draggedId || !targetId || draggedId === targetId) return allNotes;
+
+  const draggedIndex = allNotes.findIndex((n) => n.id === draggedId);
+  const targetIndex = allNotes.findIndex((n) => n.id === targetId);
+
+  if (draggedIndex === -1 || targetIndex === -1) return allNotes;
+
+  const result = [...allNotes];
+  const [removed] = result.splice(draggedIndex, 1);
+  const newTargetIndex = result.findIndex((n) => n.id === targetId);
+
+  if (newTargetIndex !== -1) {
+    result.splice(newTargetIndex, 0, removed);
+  } else {
+    result.splice(targetIndex, 0, removed);
+  }
+
+  return result;
 }
 
 function getCleanNonTodoContent(note: NoteItem): string {
@@ -150,7 +175,7 @@ function InteractiveNoteContent({
           const taskText = match[4];
           return (
             <div
-              key={idx}
+              key={`task-${idx}`}
               className="flex items-start gap-2 text-xs leading-relaxed group/item"
               onClick={(e) => {
                 e.stopPropagation();
@@ -161,14 +186,12 @@ function InteractiveNoteContent({
             >
               <button
                 type="button"
-                className={`w-3.5 h-3.5 mt-0.5 rounded-[4px] flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                className={`w-3.5 h-3.5 mt-0.5 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                   isCompleted
-                    ? isDark
-                      ? 'bg-emerald-500 text-white'
-                      : 'bg-emerald-600 text-white'
+                    ? 'bg-emerald-500 text-white'
                     : isDark
-                    ? 'bg-neutral-800 border border-neutral-700 hover:border-neutral-500'
-                    : 'bg-neutral-200 border border-neutral-300 hover:border-neutral-400'
+                    ? 'border border-neutral-600 hover:border-neutral-400 bg-transparent'
+                    : 'border border-neutral-300 hover:border-neutral-400 bg-transparent'
                 }`}
                 title={isCompleted ? 'Mark pending' : 'Mark done'}
               >
@@ -189,11 +212,11 @@ function InteractiveNoteContent({
           );
         }
         if (!line.trim()) {
-          return <div key={idx} className="h-1.5" />;
+          return <div key={`spacer-${idx}`} className="h-1.5" />;
         }
         return (
           <p
-            key={idx}
+            key={`line-${idx}`}
             className={`text-xs leading-relaxed break-words ${
               isDark ? 'text-neutral-400' : 'text-neutral-600'
             }`}
@@ -207,13 +230,21 @@ function InteractiveNoteContent({
 }
 
 interface NoteCardProps {
-  key?: string;
+  key?: React.Key;
   note: NoteItem;
   theme: ThemeMode;
   onSelectNote?: (note: NoteItem) => void;
   onToggleTodoItem?: (noteId: string, itemId: string) => void;
   onOpenContextMenu: (note: NoteItem, x: number, y: number) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStartCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
+  onDragOverCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
+  onDragLeaveCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
+  onDropCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
+  onDragEndCard?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onTouchStartCard?: (e: React.TouchEvent<HTMLDivElement>, noteId: string) => void;
 }
 
 function NoteCard({
@@ -223,10 +254,19 @@ function NoteCard({
   onToggleTodoItem,
   onOpenContextMenu,
   onUpdateNote,
+  isDragging,
+  isDragOver,
+  onDragStartCard,
+  onDragOverCard,
+  onDragLeaveCard,
+  onDropCard,
+  onDragEndCard,
+  onTouchStartCard,
 }: NoteCardProps) {
   const isDark = theme === 'dark';
   const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
   const isTodo = note.entryType === 'todo' || !!note.isTodo;
+  const isDiary = note.entryType === 'diary' || !!note.isDiary;
   const todoItems: TodoSubItem[] = isTodo ? parseTodoItemsFromNote(note) : [];
   const completedCount = todoItems.filter((t) => t.completed).length;
   const totalCount = todoItems.length;
@@ -248,7 +288,7 @@ function NoteCard({
     };
   }, []);
 
-  const handleTogglePlayVoice = (e: React.MouseEvent) => {
+  const handleTogglePlayVoice = (e: MouseEvent) => {
     e.stopPropagation();
     const primaryUrl =
       note.voiceNotes?.[0]?.audioUrl ||
@@ -364,57 +404,106 @@ function NoteCard({
 
   return (
     <motion.div
-      key={note.id}
+      data-note-id={note.id}
+      draggable
+      onDragStart={(e) => onDragStartCard?.(e as any, note.id)}
+      onDragOver={(e) => onDragOverCard?.(e as any, note.id)}
+      onDragLeave={(e) => onDragLeaveCard?.(e as any, note.id)}
+      onDrop={(e) => onDropCard?.(e as any, note.id)}
+      onDragEnd={(e) => onDragEndCard?.(e as any)}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       onClick={handleCardClick}
       onContextMenu={handleContextMenu}
-      onTouchStart={handleTouchStart}
+      onTouchStart={(e) => {
+        onTouchStartCard?.(e as any, note.id);
+        handleTouchStart(e);
+      }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
-      className={`w-full p-3.5 sm:p-4 rounded-2xl active:scale-[0.99] transition-all cursor-pointer shadow-xs border border-transparent hover:border-neutral-200/60 dark:hover:border-neutral-800/80 select-none ${
-        isDark
-          ? 'bg-[#181818] text-neutral-100 hover:bg-[#1c1c1c]'
-          : 'bg-[#f0f1f4] text-neutral-900 hover:bg-[#eaecee]'
+      className={`group relative w-full p-3.5 sm:p-4 rounded-2xl transition-all cursor-grab active:cursor-grabbing shadow-xs border select-none ${
+        isDragging
+          ? 'opacity-30 scale-[0.97] ring-2 ring-emerald-500/60 border-dashed border-emerald-500 bg-emerald-500/5 z-0'
+          : isDragOver
+          ? 'ring-2 ring-emerald-500 border-emerald-500 scale-[1.02] shadow-xl z-20'
+          : isDark
+          ? 'bg-[#141416] text-neutral-100 hover:bg-[#18181b] border-neutral-800/80 hover:border-neutral-700/80 hover:shadow-md'
+          : 'bg-white text-neutral-900 hover:bg-[#fafafc] border-neutral-200/80 hover:border-neutral-300 hover:shadow-md'
       }`}
     >
+      {/* Drop Target Indicator Bar */}
+      {isDragOver && (
+        <div className="absolute inset-x-2 -top-1.5 h-1 bg-emerald-500 rounded-full shadow-md shadow-emerald-500/50 animate-pulse pointer-events-none z-30" />
+      )}
+
       <div className="flex items-start justify-between gap-2">
         <h3
-          className={`text-sm font-semibold tracking-tight leading-snug line-clamp-2 ${
+          className={`text-sm font-semibold tracking-tight leading-snug line-clamp-2 min-w-0 flex-1 break-words ${
             isDark ? 'text-white' : 'text-neutral-900'
           }`}
         >
-          {note.title || 'Untitled'}
+          {capitalizeFirstChar(note.title)}
         </h3>
 
         {/* Category / Security Badge */}
         {isPassKey && (
           <span
-            className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${
+            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
               isDark
-                ? 'bg-neutral-800 text-neutral-300'
-                : 'bg-neutral-200/80 text-neutral-700'
+                ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
+                : 'bg-amber-100 text-amber-800 border border-amber-200/80'
             }`}
+            title="Key"
           >
-            <KeyRound className="w-2.5 h-2.5" />
-            <span>Key</span>
+            <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-300 shrink-0" />
+            <span className="hidden md:inline">Key</span>
+          </span>
+        )}
+
+        {isDiary && (
+          <span
+            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+              isDark
+                ? 'bg-purple-500/10 text-purple-200 border border-purple-500/20'
+                : 'bg-purple-100 text-purple-800 border border-purple-200/80'
+            }`}
+            title="Diary"
+          >
+            <BookOpen className="w-3 h-3 md:w-2.5 md:h-2.5 text-purple-500 dark:text-purple-300 shrink-0" />
+            <span className="hidden md:inline">Diary</span>
           </span>
         )}
 
         {isTodo && (
           <span
-            className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0 font-medium ${
+            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] rounded-full shrink-0 font-medium ${
               completedCount === totalCount && totalCount > 0
                 ? isDark
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : 'bg-emerald-100 text-emerald-700'
+                  ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                 : isDark
-                ? 'bg-neutral-800 text-neutral-300'
-                : 'bg-neutral-200/80 text-neutral-700'
+                ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
             }`}
+            title="Todo"
           >
-            {completedCount}/{totalCount}
+            <ListTodo className="w-3 h-3 md:w-2.5 md:h-2.5 text-emerald-500 dark:text-emerald-300 shrink-0" />
+            <span className="hidden md:inline">Todo</span>
+          </span>
+        )}
+
+        {!isPassKey && !isDiary && !isTodo && (
+          <span
+            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+              isDark
+                ? 'bg-sky-500/10 text-sky-200 border border-sky-500/20'
+                : 'bg-sky-100 text-sky-800 border border-sky-200/80'
+            }`}
+            title="Note"
+          >
+            <Feather className="w-3 h-3 md:w-2.5 md:h-2.5 text-sky-500 dark:text-sky-300 shrink-0" />
+            <span className="hidden md:inline">Note</span>
           </span>
         )}
       </div>
@@ -427,9 +516,9 @@ function NoteCard({
           <div className="mt-2.5 space-y-1.5">
             {todoItems.length > 0 ? (
               <div className="space-y-1.5">
-                {todoItems.slice(0, 8).map((item) => (
+                {todoItems.slice(0, 8).map((item, itemIdx) => (
                   <div
-                    key={item.id}
+                    key={`card-todo-${note.id}-${item.id || itemIdx}`}
                     className="flex items-center gap-2 group/item text-left"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -440,19 +529,17 @@ function NoteCard({
                   >
                     <button
                       type="button"
-                      className={`w-3.5 h-3.5 rounded-[4px] flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                         item.completed
-                          ? isDark
-                            ? 'bg-white text-black'
-                            : 'bg-neutral-900 text-white'
+                          ? 'bg-emerald-500 text-white'
                           : isDark
-                          ? 'bg-[#282828] hover:bg-[#343434]'
-                          : 'bg-neutral-300 hover:bg-neutral-400'
+                          ? 'border border-neutral-600 hover:border-neutral-400 bg-transparent'
+                          : 'border border-neutral-300 hover:border-neutral-400 bg-transparent'
                       }`}
                       title={item.completed ? 'Mark pending' : 'Mark done'}
                     >
                       {item.completed && (
-                        <Check className="w-3 h-3 stroke-[3]" />
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
                       )}
                     </button>
                     <span
@@ -518,7 +605,13 @@ function NoteCard({
 
         {/* Attached Photo Previews (Adaptive Grid) */}
         {allImages.length === 1 && (
-          <div className="mt-2.5 overflow-hidden rounded-xl border border-neutral-200/60 dark:border-neutral-800/80 bg-neutral-100/70 dark:bg-[#181818] flex items-center justify-center">
+          <div
+            className={`mt-2.5 overflow-hidden rounded-xl border flex items-center justify-center ${
+              isDark
+                ? 'border-neutral-800/80 bg-[#181818]'
+                : 'border-neutral-200/40 bg-neutral-50/50'
+            }`}
+          >
             <img
               src={allImages[0]}
               alt={note.title || 'Attached photo'}
@@ -532,8 +625,12 @@ function NoteCard({
           <div className="mt-2.5 grid grid-cols-2 gap-1.5 overflow-hidden rounded-xl">
             {allImages.map((src, i) => (
               <div
-                key={i}
-                className="aspect-square bg-neutral-100 dark:bg-[#181818] rounded-xl overflow-hidden border border-neutral-200/60 dark:border-neutral-800/80"
+                key={`pair-img-${note.id}-${i}`}
+                className={`aspect-square rounded-xl overflow-hidden border ${
+                  isDark
+                    ? 'bg-[#181818] border-neutral-800/80'
+                    : 'bg-neutral-50/50 border-neutral-200/40'
+                }`}
               >
                 <img
                   src={src}
@@ -550,8 +647,12 @@ function NoteCard({
           <div className="mt-2.5 grid grid-cols-3 gap-1.5 overflow-hidden rounded-xl">
             {allImages.slice(0, 3).map((src, i) => (
               <div
-                key={i}
-                className="relative aspect-square bg-neutral-100 dark:bg-[#181818] rounded-xl overflow-hidden border border-neutral-200/60 dark:border-neutral-800/80"
+                key={`grid-img-${note.id}-${i}`}
+                className={`relative aspect-square rounded-xl overflow-hidden border ${
+                  isDark
+                    ? 'bg-[#181818] border-neutral-800/80'
+                    : 'bg-neutral-50/50 border-neutral-200/40'
+                }`}
               >
                 <img
                   src={src}
@@ -560,7 +661,11 @@ function NoteCard({
                   loading="lazy"
                 />
                 {i === 2 && allImages.length > 3 && (
-                  <div className="absolute inset-0 bg-black/65 backdrop-blur-[1px] flex items-center justify-center text-white text-xs font-bold">
+                  <div
+                    className={`absolute inset-0 backdrop-blur-[1px] flex items-center justify-center text-xs font-bold ${
+                      isDark ? 'bg-black/65 text-white' : 'bg-black/45 text-white'
+                    }`}
+                  >
                     +{allImages.length - 2}
                   </div>
                 )}
@@ -570,58 +675,53 @@ function NoteCard({
         )}
       </div>
 
-      {/* Footer: showing voice play button and photo indicator if present (non-pass/key notes) */}
-      {!isPassKey && (voiceCount > 0 || allImages.length > 0) && (
+      {/* Footer: showing todo progress, voice badge, and photo badge if present (non-pass/key notes) */}
+      {!isPassKey && (isTodo || voiceCount > 0 || allImages.length > 0) && (
         <div
-          className={`mt-3 flex items-center justify-between gap-2 text-[11px] ${
+          className={`mt-2.5 flex items-center justify-start gap-2 flex-wrap text-[11px] ${
             isDark ? 'text-neutral-500' : 'text-neutral-400'
           }`}
         >
-          {voiceCount > 0 ? (
-            <button
-              type="button"
-              onClick={handleTogglePlayVoice}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all active:scale-95 shadow-xs cursor-pointer ${
-                isPlayingAudio
+          {isTodo && (
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium shrink-0 ${
+                completedCount === totalCount && totalCount > 0
                   ? isDark
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 ring-1 ring-emerald-500/20'
-                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                   : isDark
-                  ? 'bg-neutral-800/90 hover:bg-neutral-700/90 text-emerald-400 border border-neutral-700/60'
-                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80'
+                  ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
               }`}
-              title={isPlayingAudio ? 'Pause voice note' : 'Play voice note'}
             >
-              {isPlayingAudio ? (
-                <Pause className="w-3 h-3 fill-current animate-pulse" />
-              ) : (
-                <Play className="w-3 h-3 fill-current ml-0.5" />
-              )}
-              <span className="font-semibold text-[11px]">
-                {isPlayingAudio
-                  ? `${Math.floor(playbackTime / 60)}:${(playbackTime % 60).toString().padStart(2, '0')}`
-                  : voiceCount > 1
-                  ? `Play Voice (${voiceCount})`
-                  : 'Play Voice'}
-              </span>
-              {isPlayingAudio && (
-                <div className="flex items-center gap-0.5 ml-0.5">
-                  <div className="w-0.5 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-0.5 h-3 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-0.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              )}
-            </button>
-          ) : <div />}
+              <Check className="w-3 h-3 text-emerald-500 dark:text-emerald-300 shrink-0" />
+              <span className="font-semibold">{completedCount}/{totalCount}</span>
+            </span>
+          )}
+
+          {voiceCount > 0 && (
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium shrink-0 ${
+                isDark
+                  ? 'bg-teal-500/10 text-teal-200 border border-teal-500/20'
+                  : 'bg-teal-50 text-teal-700 border border-teal-200/80'
+              }`}
+            >
+              <Mic className="w-3 h-3 text-teal-500 dark:text-teal-300 shrink-0" />
+              <span className="font-semibold">{voiceCount}</span>
+            </span>
+          )}
 
           {allImages.length > 0 && (
-            <span className="flex items-center gap-1 text-blue-500 font-medium text-[11px] shrink-0">
-              <ImageIcon className="w-3 h-3" />
-              <span>
-                {allImages.length > 1
-                  ? `Photos (${allImages.length})`
-                  : 'Photo'}
-              </span>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium shrink-0 ${
+                isDark
+                  ? 'bg-indigo-500/10 text-indigo-200 border border-indigo-500/20'
+                  : 'bg-indigo-50 text-indigo-700 border border-indigo-200/80'
+              }`}
+            >
+              <ImageIcon className="w-3 h-3 text-indigo-500 dark:text-indigo-300 shrink-0" />
+              <span className="font-semibold">{allImages.length}</span>
             </span>
           )}
         </div>
@@ -642,6 +742,7 @@ export function EmptyBody({
   onDeleteNote,
   onToggleFavorite,
   onUpdateNote,
+  onReorderNotes,
 }: EmptyBodyProps) {
   const isDark = theme === 'dark';
   const [contextMenu, setContextMenu] = useState<{
@@ -649,6 +750,76 @@ export function EmptyBody({
     x: number;
     y: number;
   } | null>(null);
+
+  const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
+  const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
+
+  const touchDragRef = useRef<{
+    noteId: string;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+    timer: ReturnType<typeof setTimeout> | null;
+  }>({ noteId: '', startX: 0, startY: 0, isDragging: false, timer: null });
+
+  const performReorder = (sourceId: string, targetId: string) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const reordered = reorderNotesWithFilter(notes, sourceId, targetId);
+    triggerHaptic('medium');
+    onReorderNotes?.(reordered);
+  };
+
+  const handleDragStartCard = (e: React.DragEvent<HTMLDivElement>, noteId: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', noteId);
+    setDraggedNoteId(noteId);
+    triggerHaptic('selection');
+  };
+
+  const handleDragOverCard = (e: React.DragEvent<HTMLDivElement>, noteId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedNoteId && draggedNoteId !== noteId && dragOverNoteId !== noteId) {
+      setDragOverNoteId(noteId);
+    }
+  };
+
+  const handleDragLeaveCard = (_e: React.DragEvent<HTMLDivElement>, noteId: string) => {
+    if (dragOverNoteId === noteId) {
+      setDragOverNoteId(null);
+    }
+  };
+
+  const handleDropCard = (e: React.DragEvent<HTMLDivElement>, targetNoteId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedNoteId;
+    if (sourceId && targetNoteId && sourceId !== targetNoteId) {
+      performReorder(sourceId, targetNoteId);
+    }
+    setDraggedNoteId(null);
+    setDragOverNoteId(null);
+  };
+
+  const handleDragEndCard = () => {
+    setDraggedNoteId(null);
+    setDragOverNoteId(null);
+  };
+
+  const handleTouchStartCard = (e: React.TouchEvent<HTMLDivElement>, noteId: string) => {
+    const touch = e.touches[0];
+    if (touchDragRef.current.timer) clearTimeout(touchDragRef.current.timer);
+    touchDragRef.current = {
+      noteId,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      isDragging: false,
+      timer: setTimeout(() => {
+        touchDragRef.current.isDragging = true;
+        setDraggedNoteId(noteId);
+        triggerHaptic('medium');
+      }, 300),
+    };
+  };
 
   const handleOpenContextMenu = (note: NoteItem, x: number, y: number) => {
     setContextMenu({ note, x, y });
@@ -658,25 +829,37 @@ export function EmptyBody({
     setContextMenu(null);
   };
 
-  // Filter notes by active tab and search query
-  const filteredNotes = notes.filter((n) => {
-    const matchesSearch =
-      searchQuery === '' ||
-      n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (n.email && n.email.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Filter notes by active tab and search query, ensuring stable and unique IDs
+  const filteredNotes = useMemo(() => {
+    const seen = new Set<string>();
+    const list = notes.filter((n) => {
+      const matchesSearch =
+        searchQuery === '' ||
+        n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        n.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (n.email && n.email.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    if (!matchesSearch) return false;
-    if (activeTab === 'archive') return !!n.isArchived;
-    if (n.isArchived) return false;
-    if (activeTab === 'favorites') return !!n.isFavorite;
-    if (activeTab === 'diary') return n.entryType === 'diary';
-    if (activeTab === 'todo') return !!n.isTodo || n.entryType === 'todo';
-    if (activeTab === 'vault' || activeTab === 'safe') {
-      return !!(n.isSafe || n.isVault || n.entryType === 'passwords');
-    }
-    return true;
-  });
+      if (!matchesSearch) return false;
+      if (activeTab === 'archive') return !!n.isArchived;
+      if (n.isArchived) return false;
+      if (activeTab === 'favorites') return !!n.isFavorite;
+      if (activeTab === 'diary') return n.entryType === 'diary';
+      if (activeTab === 'todo') return !!n.isTodo || n.entryType === 'todo';
+      if (activeTab === 'vault' || activeTab === 'safe') {
+        return !!(n.isSafe || n.isVault || n.entryType === 'passwords');
+      }
+      return true;
+    });
+
+    return list.map((n, idx) => {
+      let id = n.id ? String(n.id).trim() : `note-${idx}`;
+      if (!id || seen.has(id)) {
+        id = `${id || 'note'}-${idx}-${seen.size}`;
+      }
+      seen.add(id);
+      return n.id === id ? n : { ...n, id };
+    });
+  }, [notes, searchQuery, activeTab]);
 
   const getEmptyState = () => {
     if (searchQuery) {
@@ -824,16 +1007,24 @@ function estimateNoteHeight(note: NoteItem): number {
           }}
         >
           {columnNotes.map((col, colIndex) => (
-            <div key={colIndex} className="flex flex-col gap-3 md:gap-3.5 min-w-0">
-              {col.map((note) => (
+            <div key={`col-${colIndex}`} className="flex flex-col gap-3 md:gap-3.5 min-w-0">
+              {col.map((note, noteIdx) => (
                 <NoteCard
-                  key={note.id}
+                  key={`card-${note.id}`}
                   note={note}
                   theme={theme}
                   onSelectNote={onSelectNote}
                   onToggleTodoItem={onToggleTodoItem}
                   onOpenContextMenu={handleOpenContextMenu}
                   onUpdateNote={onUpdateNote}
+                  isDragging={note.id === draggedNoteId}
+                  isDragOver={note.id === dragOverNoteId}
+                  onDragStartCard={handleDragStartCard}
+                  onDragOverCard={handleDragOverCard}
+                  onDragLeaveCard={handleDragLeaveCard}
+                  onDropCard={handleDropCard}
+                  onDragEndCard={handleDragEndCard}
+                  onTouchStartCard={handleTouchStartCard}
                 />
               ))}
             </div>

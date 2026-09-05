@@ -11,16 +11,17 @@ import {
   PanelLeft,
   PanelLeftClose,
 } from 'lucide-react';
-import { NavTab, ThemeMode, NoteItem } from '../types';
+import { NavTab, ThemeMode, NoteItem, AppPage } from '../types';
 
 interface DesktopSidebarProps {
   activeTab: NavTab;
-  currentPage: 'main' | 'settings';
+  currentPage: AppPage;
   theme: ThemeMode;
   notes: NoteItem[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   onSelectTab: (tab: NavTab) => void;
+  onOpenTodo?: () => void;
   onOpenNewNote: () => void;
   onOpenSearch?: () => void;
   onOpenData?: () => void;
@@ -36,6 +37,7 @@ export function DesktopSidebar({
   isCollapsed = false,
   onToggleCollapse,
   onSelectTab,
+  onOpenTodo,
   onOpenNewNote,
   onOpenSettings,
   onToggleTheme,
@@ -57,8 +59,14 @@ export function DesktopSidebar({
       id: 'todo' as NavTab,
       label: 'Todo',
       icon: ListTodo,
-      isActive: currentPage === 'main' && activeTab === 'todo',
-      onClick: () => onSelectTab('todo'),
+      isActive: currentPage === 'todo',
+      onClick: () => {
+        if (onOpenTodo) {
+          onOpenTodo();
+        } else {
+          onSelectTab('todo');
+        }
+      },
     },
     {
       id: 'safe' as NavTab,
@@ -94,18 +102,21 @@ export function DesktopSidebar({
     },
   ];
 
-  const renderNavItem = (item: {
-    id: string;
-    label: string;
-    icon: typeof Home;
-    isActive: boolean;
-    onClick: () => void;
-  }) => {
+  const renderNavItem = (
+    item: {
+      id: string;
+      label: string;
+      icon: typeof Home;
+      isActive: boolean;
+      onClick: () => void;
+    },
+    sectionPrefix: string
+  ) => {
     const Icon = item.icon;
     if (isCollapsed) {
       return (
         <button
-          key={item.id}
+          key={`sidebar-collapsed-${sectionPrefix}-${item.id}`}
           id={`desktop-nav-collapsed-${item.id}`}
           type="button"
           onClick={item.onClick}
@@ -127,7 +138,7 @@ export function DesktopSidebar({
 
     return (
       <button
-        key={item.id}
+        key={`sidebar-nav-${sectionPrefix}-${item.id}`}
         id={`desktop-nav-${item.id}`}
         type="button"
         onClick={item.onClick}
@@ -165,8 +176,8 @@ export function DesktopSidebar({
         isCollapsed ? 'w-18 lg:w-20' : 'w-64 lg:w-72'
       } ${
         isDark
-          ? 'bg-[#0a0a0a] text-neutral-300'
-          : 'bg-[#f8f9fa] text-neutral-700'
+          ? 'bg-[#09090b] text-neutral-300 border-r border-neutral-800/60'
+          : 'bg-[#f4f4f6] text-neutral-700 border-r border-neutral-200/80'
       }`}
     >
       <div className="w-full flex flex-col h-full overflow-hidden">
@@ -248,7 +259,7 @@ export function DesktopSidebar({
               </div>
             )}
             <nav className="space-y-1.5">
-              {navBarItems.map((item) => renderNavItem(item))}
+              {navBarItems.map((item) => renderNavItem(item, 'main'))}
             </nav>
           </div>
 
@@ -271,7 +282,7 @@ export function DesktopSidebar({
               />
             )}
             <nav className="space-y-1.5">
-              {moreItems.map((item) => renderNavItem(item))}
+              {moreItems.map((item) => renderNavItem(item, 'more'))}
             </nav>
           </div>
         </div>

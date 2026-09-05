@@ -6,12 +6,13 @@ import { DrawerMenu } from './components/DrawerMenu';
 import { SearchDrawer } from './components/SearchDrawer';
 import { NewNoteModal } from './components/NewNoteModal';
 import { SettingsPage } from './components/SettingsPage';
+import { TodoPage } from './components/TodoPage';
 import { PassKeyDrawer } from './components/PassKeyDrawer';
 import { TodoDrawer, parseTodoItemsFromNote } from './components/TodoDrawer';
 import { DiaryDrawer } from './components/DiaryDrawer';
 import { DataDrawer } from './components/DataDrawer';
 import { DesktopSidebar } from './components/DesktopSidebar';
-import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem, VoiceNoteAttachment } from './types';
+import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem, VoiceNoteAttachment, AppPage } from './types';
 import {
   updateNativeStatusBar,
   registerNativeBackButton,
@@ -24,7 +25,7 @@ export default function App() {
     return saved === 'light' || saved === 'dark' ? (saved as ThemeMode) : 'dark';
   });
 
-  const [currentPage, setCurrentPage] = useState<'main' | 'settings'>('main');
+  const [currentPage, setCurrentPage] = useState<AppPage>('main');
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isDataDrawerOpen, setIsDataDrawerOpen] = useState(false);
@@ -41,8 +42,22 @@ export default function App() {
     setIsNewNoteOpen(true);
   };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      return true;
+    }
     return localStorage.getItem('memento_sidebar_collapsed') === 'true';
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768 && window.innerWidth < 1024) {
+        setIsSidebarCollapsed(true);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
@@ -52,13 +67,40 @@ export default function App() {
     });
   };
 
+  const [isNavbarFloating, setIsNavbarFloating] = useState<boolean>(() => {
+    return localStorage.getItem('memento_navbar_floating') === 'true';
+  });
+
+  const toggleNavbarFloating = () => {
+    triggerHaptic('selection');
+    setIsNavbarFloating((prev) => {
+      const next = !prev;
+      localStorage.setItem('memento_navbar_floating', String(next));
+      return next;
+    });
+  };
+
   const [notes, setNotes] = useState<NoteItem[]>(() => {
     try {
       const saved = localStorage.getItem('memento_notes');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const seen = new Set<string>();
+          return parsed.map((item, idx) => {
+            let id = item?.id ? String(item.id) : `note-${idx}-${Date.now()}`;
+            if (seen.has(id)) {
+              id = `${id}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+            }
+            seen.add(id);
+            return { ...item, id };
+          });
+        }
+      }
     } catch {
-      return [];
+      // ignore
     }
+    return [];
   });
 
   useEffect(() => {
@@ -119,7 +161,7 @@ export default function App() {
         setIsDrawerOpen(false);
         return true;
       }
-      if (currentPage === 'settings') {
+      if (currentPage === 'settings' || currentPage === 'todo') {
         setCurrentPage('main');
         return true;
       }
@@ -189,7 +231,7 @@ export default function App() {
     const isSafe = extra?.isSafe ?? (activeTab === 'vault' || activeTab === 'safe');
 
     const newNote: NoteItem = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       title,
       content,
       date: new Date().toLocaleDateString('en-US', {
@@ -233,8 +275,7 @@ export default function App() {
       setActiveTab('archive');
       setCurrentPage('main');
     } else if (itemId === 'todo') {
-      setActiveTab('todo');
-      setCurrentPage('main');
+      setCurrentPage('todo');
     } else if (itemId === 'safe' || itemId === 'vault') {
       setActiveTab('safe');
       setCurrentPage('main');
@@ -307,13 +348,13 @@ export default function App() {
   return (
     <div
       className={`h-full h-dvh w-full flex justify-center overflow-hidden transition-colors duration-200 ${
-        isDark ? 'bg-[#000000] text-[#f4f4f5]' : 'bg-[#e8e9ed] text-[#18181b]'
+        isDark ? 'bg-[#09090b] text-[#f4f4f5]' : 'bg-[#f4f4f6] text-[#18181b]'
       }`}
     >
       {/* Responsive Workspace: mobile frame on phone screens, full-width desktop workstation on larger screens */}
       <div
         className={`w-full max-w-md md:max-w-none md:w-full h-full flex flex-col md:flex-row relative overflow-hidden transition-colors duration-200 ${
-          isDark ? 'bg-[#0a0a0a]' : 'bg-[#f8f9fa]'
+          isDark ? 'bg-[#09090b]' : 'bg-[#f4f4f6]'
         }`}
       >
         {/* Desktop Sidebar: automatically hidden on mobile, visible on desktop (md+) */}
@@ -325,9 +366,14 @@ export default function App() {
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={toggleSidebar}
           onSelectTab={(tab) => {
-            setActiveTab(tab);
-            setCurrentPage('main');
+            if (tab === 'todo') {
+              setCurrentPage('todo');
+            } else {
+              setActiveTab(tab);
+              setCurrentPage('main');
+            }
           }}
+          onOpenTodo={() => setCurrentPage('todo')}
           onOpenNewNote={handleOpenNewNote}
           onOpenSearch={() => setIsSearchDrawerOpen(true)}
           onOpenData={() => setIsDataDrawerOpen(true)}
@@ -341,10 +387,35 @@ export default function App() {
             <SettingsPage
               theme={theme}
               notes={notes}
+              isNavbarFloating={isNavbarFloating}
               onBack={() => setCurrentPage('main')}
+              onOpenSearch={() => setIsSearchDrawerOpen(true)}
               onToggleTheme={toggleTheme}
+              onToggleNavbarFloating={toggleNavbarFloating}
               onClearAllNotes={() => setNotes([])}
-              onImportNotes={(imported) => setNotes(imported)}
+              onImportNotes={(imported) => {
+                const seen = new Set<string>();
+                const cleaned = imported.map((item, idx) => {
+                  let id = item?.id ? String(item.id) : `imported-${idx}-${Date.now()}`;
+                  if (seen.has(id)) {
+                    id = `${id}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+                  }
+                  seen.add(id);
+                  return { ...item, id };
+                });
+                setNotes(cleaned);
+              }}
+            />
+          ) : currentPage === 'todo' ? (
+            <TodoPage
+              theme={theme}
+              onBack={() => setCurrentPage('main')}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onOpenSearch={() => setIsSearchDrawerOpen(true)}
+              onSaveAsNote={(title, content) =>
+                handleSaveNote(title, content, { entryType: 'todo', isTodo: true })
+              }
             />
           ) : (
             <>
@@ -376,6 +447,10 @@ export default function App() {
                     prev.map((n) => (n.id === updated.id ? updated : n))
                   );
                 }}
+                onReorderNotes={(reordered) => {
+                  triggerHaptic('medium');
+                  setNotes(reordered);
+                }}
               />
             </>
           )}
@@ -383,12 +458,19 @@ export default function App() {
           {/* Bottom Nav Bar: auto-hidden on desktop (md:hidden) - always visible on mobile, even in settings */}
           <NavBar
             activeTab={activeTab}
+            currentPage={currentPage}
             theme={theme}
             isSettings={currentPage === 'settings'}
+            isNavbarFloating={isNavbarFloating}
             onSelectTab={(tab) => {
-              setActiveTab(tab);
-              setCurrentPage('main');
+              if (tab === 'todo') {
+                setCurrentPage('todo');
+              } else {
+                setActiveTab(tab);
+                setCurrentPage('main');
+              }
             }}
+            onOpenTodo={() => setCurrentPage('todo')}
             onOpenNewNote={handleOpenNewNote}
             onOpenDrawer={() => setIsDrawerOpen(true)}
           />
@@ -430,7 +512,7 @@ export default function App() {
                   : editingNote.isSafe || editingNote.isVault
                   ? 'passwords'
                   : 'notes')
-              : activeTab === 'todo'
+              : currentPage === 'todo' || activeTab === 'todo'
               ? 'todo'
               : activeTab === 'vault' || activeTab === 'safe'
               ? 'passwords'
@@ -529,7 +611,18 @@ export default function App() {
           notes={notes}
           onClose={() => setIsDataDrawerOpen(false)}
           onClearAllNotes={() => setNotes([])}
-          onImportNotes={(imported) => setNotes(imported)}
+          onImportNotes={(imported) => {
+            const seen = new Set<string>();
+            const sanitized = imported.map((item, idx) => {
+              let id = item?.id ? String(item.id).trim() : `note-${idx}-${Date.now()}`;
+              if (!id || seen.has(id)) {
+                id = `${id || 'note'}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+              }
+              seen.add(id);
+              return { ...item, id };
+            });
+            setNotes(sanitized);
+          }}
         />
       </div>
     </div>
