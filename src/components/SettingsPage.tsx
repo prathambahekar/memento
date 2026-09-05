@@ -13,6 +13,7 @@ import {
   Sun,
   X,
   Search,
+  Keyboard,
 } from 'lucide-react';
 import { ThemeMode } from '../types';
 import { NoteItem } from './EmptyBody';
@@ -25,10 +26,12 @@ interface SettingsPageProps {
   theme: ThemeMode;
   notes: NoteItem[];
   isNavbarFloating?: boolean;
+  autoOpenKeyboard?: boolean;
   onBack: () => void;
   onOpenSearch?: () => void;
   onToggleTheme: () => void;
   onToggleNavbarFloating?: () => void;
+  onToggleAutoOpenKeyboard?: () => void;
   onClearAllNotes?: () => void;
   onImportNotes?: (notes: NoteItem[]) => void;
 }
@@ -37,10 +40,12 @@ export function SettingsPage({
   theme,
   notes,
   isNavbarFloating = false,
+  autoOpenKeyboard = true,
   onBack,
   onOpenSearch,
   onToggleTheme,
   onToggleNavbarFloating,
+  onToggleAutoOpenKeyboard,
   onClearAllNotes,
   onImportNotes,
 }: SettingsPageProps) {
@@ -174,6 +179,70 @@ export function SettingsPage({
                   isDark ? 'text-neutral-500' : 'text-neutral-400'
                 }`}
               />
+            </div>
+          </div>
+
+          {/* Auto Open Keyboard Card */}
+          <div
+            id="setting-auto-open-keyboard-card"
+            onClick={() => {
+              triggerHaptic('selection');
+              onToggleAutoOpenKeyboard?.();
+            }}
+            role="button"
+            tabIndex={0}
+            className={`w-full p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all shadow-sm ${
+              isDark
+                ? 'bg-[#141414] hover:bg-[#1a1a1a] text-white'
+                : 'bg-white hover:bg-neutral-50/90 border border-neutral-200/80 text-neutral-900'
+            }`}
+          >
+            <div className="flex items-center gap-3.5 min-w-0 pr-2">
+              <div
+                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                  isDark ? 'bg-[#202020] text-white' : 'bg-[#f0f1f4] text-neutral-800'
+                }`}
+              >
+                <Keyboard className="w-5 h-5 stroke-[1.8]" />
+              </div>
+
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold tracking-tight truncate leading-snug">
+                  Auto Open Keyboard
+                </h3>
+                <p
+                  className={`text-xs truncate ${
+                    isDark ? 'text-neutral-400' : 'text-neutral-500'
+                  }`}
+                >
+                  Auto-open soft keyboard when focusing inputs & search
+                </p>
+              </div>
+            </div>
+
+            {/* Toggle switch with fluid spring animation matching the user screenshot */}
+            <div className="shrink-0 flex items-center">
+              <div
+                role="switch"
+                aria-checked={autoOpenKeyboard}
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                  autoOpenKeyboard
+                    ? isDark
+                      ? 'bg-[#52525b]'
+                      : 'bg-neutral-800'
+                    : isDark
+                    ? 'bg-[#27272a]'
+                    : 'bg-neutral-300'
+                }`}
+              >
+                <motion.span
+                  layout
+                  transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                  className={`pointer-events-none inline-block h-6 w-6 rounded-full bg-white shadow-sm ring-0 ${
+                    autoOpenKeyboard ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </div>
             </div>
           </div>
         </section>
@@ -432,6 +501,8 @@ export function SettingsPage({
         onToggleTheme={onToggleTheme}
         isNavbarFloating={isNavbarFloating}
         onToggleNavbarFloating={onToggleNavbarFloating || (() => {})}
+        autoOpenKeyboard={autoOpenKeyboard}
+        onToggleAutoOpenKeyboard={onToggleAutoOpenKeyboard || (() => {})}
       />
     </motion.div>
   );

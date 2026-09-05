@@ -14,8 +14,9 @@ import {
   Check,
   Image as ImageIcon,
   GripVertical,
+  Layers,
 } from 'lucide-react';
-import { NavTab, ThemeMode, NoteItem, TodoSubItem } from '../types';
+import { NavTab, ThemeMode, NoteItem, TodoSubItem, HomeChipFilter, EntryType } from '../types';
 import { parseTodoItemsFromNote } from './TodoDrawer';
 import { CardContextMenu } from './CardContextMenu';
 import { triggerHaptic, isNativePlatform } from '../lib/capacitor';
@@ -96,7 +97,9 @@ interface EmptyBodyProps {
   notes: NoteItem[];
   searchQuery: string;
   isReorderMode?: boolean;
-  onOpenNewNote: () => void;
+  selectedChip?: HomeChipFilter;
+  onSelectChip?: (chip: HomeChipFilter) => void;
+  onOpenNewNote: (preferredType?: EntryType) => void;
   onSelectNote?: (note: NoteItem) => void;
   onToggleTodoItem?: (noteId: string, itemId: string) => void;
   onEditNote?: (note: NoteItem) => void;
@@ -105,6 +108,55 @@ interface EmptyBodyProps {
   onUpdateNote?: (updatedNote: NoteItem) => void;
   onReorderNotes?: (reorderedNotes: NoteItem[]) => void;
 }
+
+export function isKeyNote(note: NoteItem): boolean {
+  if (note.entryType === 'passwords') return true;
+  if (typeof note.password === 'string' && note.password.trim() !== '') return true;
+  if (typeof note.service === 'string' && note.service.trim() !== '') return true;
+  if (typeof note.email === 'string' && !!(note.isSafe || note.isVault)) return true;
+  return false;
+}
+
+export function isTodoNote(note: NoteItem): boolean {
+  if (note.entryType === 'todo' || !!note.isTodo) return true;
+  if (Array.isArray(note.todoItems) && note.todoItems.length > 0) return true;
+  return false;
+}
+
+export function isDiaryNote(note: NoteItem): boolean {
+  return note.entryType === 'diary' || !!note.isDiary;
+}
+
+export function isSafeNote(note: NoteItem): boolean {
+  return !!(note.isSafe || note.isVault);
+}
+
+export function isRegularNote(note: NoteItem): boolean {
+  return !isTodoNote(note) && !isDiaryNote(note) && !isKeyNote(note) && !isSafeNote(note);
+}
+
+export function matchesHomeChip(note: NoteItem, chip: HomeChipFilter): boolean {
+  if (chip === 'all') return true;
+  if (chip === 'note') return isRegularNote(note);
+  if (chip === 'safe') return isSafeNote(note);
+  if (chip === 'key') return isKeyNote(note);
+  if (chip === 'todo') return isTodoNote(note);
+  if (chip === 'diary') return isDiaryNote(note);
+  return true;
+}
+
+export const CHIPS: Array<{
+  id: HomeChipFilter;
+  label: string;
+  icon: typeof Feather;
+}> = [
+  { id: 'all', label: 'All', icon: Layers },
+  { id: 'note', label: 'Note', icon: Feather },
+  { id: 'safe', label: 'Safe', icon: Shield },
+  { id: 'key', label: 'Key', icon: KeyRound },
+  { id: 'todo', label: 'Todo', icon: ListTodo },
+  { id: 'diary', label: 'Diary', icon: BookOpen },
+];
 
 function reorderNotesWithFilter(
   allNotes: NoteItem[],
@@ -750,6 +802,8 @@ export function EmptyBody({
   notes,
   searchQuery,
   isReorderMode = false,
+  selectedChip,
+  onSelectChip,
   onOpenNewNote,
   onSelectNote,
   onToggleTodoItem,
@@ -760,6 +814,18 @@ export function EmptyBody({
   onReorderNotes,
 }: EmptyBodyProps) {
   const isDark = theme === 'dark';
+  const [internalActiveChip, setInternalActiveChip] = useState<HomeChipFilter>('all');
+  const activeChip = selectedChip ?? internalActiveChip;
+
+  const handleChipClick = (chip: HomeChipFilter) => {
+    triggerHaptic('selection');
+    if (onSelectChip) {
+      onSelectChip(chip);
+    } else {
+      setInternalActiveChip(chip);
+    }
+  };
+
   const [contextMenu, setContextMenu] = useState<{
     note: NoteItem;
     x: number;
@@ -932,7 +998,27 @@ export function EmptyBody({
     setContextMenu(null);
   };
 
-  // Filter notes by active tab and search query, ensuring stable and unique IDs
+  // Whether home category chips should be visible
+  const showHomeChips =
+    activeTab === 'home' ||
+    activeTab === 'notes' ||
+    activeTab === 'vault' ||
+    activeTab === 'safe';
+
+  // Counts for each chip badge
+  const chipCounts = useMemo(() => {
+    const baseNotes = notes.filter((n) => !n.isArchived);
+    return {
+      all: baseNotes.length,
+      note: baseNotes.filter(isRegularNote).length,
+      safe: baseNotes.filter(isSafeNote).length,
+      key: baseNotes.filter(isKeyNote).length,
+      todo: baseNotes.filter(isTodoNote).length,
+      diary: baseNotes.filter(isDiaryNote).length,
+    };
+  }, [notes]);
+
+  // Filter notes by active tab, chips, and search query, ensuring stable and unique IDs
   const filteredNotes = useMemo(() => {
     const seen = new Set<string>();
     const list = notes.filter((n) => {
@@ -940,17 +1026,20 @@ export function EmptyBody({
         searchQuery === '' ||
         n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         n.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (n.email && n.email.toLowerCase().includes(searchQuery.toLowerCase()));
+        (n.email && n.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (n.service && n.service.toLowerCase().includes(searchQuery.toLowerCase()));
 
       if (!matchesSearch) return false;
       if (activeTab === 'archive') return !!n.isArchived;
       if (n.isArchived) return false;
       if (activeTab === 'favorites') return !!n.isFavorite;
+
+      if (showHomeChips) {
+        return matchesHomeChip(n, activeChip);
+      }
+
       if (activeTab === 'diary') return n.entryType === 'diary';
       if (activeTab === 'todo') return !!n.isTodo || n.entryType === 'todo';
-      if (activeTab === 'vault' || activeTab === 'safe') {
-        return !!(n.isSafe || n.isVault || n.entryType === 'passwords');
-      }
       return true;
     });
 
@@ -962,7 +1051,7 @@ export function EmptyBody({
       seen.add(id);
       return n.id === id ? n : { ...n, id };
     });
-  }, [notes, searchQuery, activeTab]);
+  }, [notes, searchQuery, activeTab, showHomeChips, activeChip]);
 
   const getEmptyState = () => {
     if (searchQuery) {
@@ -971,22 +1060,72 @@ export function EmptyBody({
         title: 'No notes found',
         desc: `No notes matching "${searchQuery}".`,
         btn: null,
+        typeToCreate: undefined,
       };
     }
+
+    if (showHomeChips) {
+      if (activeChip === 'todo') {
+        return {
+          Icon: ListTodo,
+          title: 'No tasks yet',
+          desc: 'Keep track of your day with interactive task checklists.',
+          btn: 'Create todo list',
+          typeToCreate: 'todo' as EntryType,
+        };
+      }
+      if (activeChip === 'safe') {
+        return {
+          Icon: Shield,
+          title: 'Safe is empty',
+          desc: 'Confidential and secure space for protected memos and sensitive documents.',
+          btn: 'Add to safe',
+          typeToCreate: 'passwords' as EntryType,
+        };
+      }
+      if (activeChip === 'key') {
+        return {
+          Icon: KeyRound,
+          title: 'No keys or passwords',
+          desc: 'Store encrypted logins, secret accounts, and access keys safely.',
+          btn: 'Store new key',
+          typeToCreate: 'passwords' as EntryType,
+        };
+      }
+      if (activeChip === 'diary') {
+        return {
+          Icon: BookOpen,
+          title: 'No diary entries yet',
+          desc: 'Reflect and journal your daily memories and thoughts privately.',
+          btn: 'Write journal',
+          typeToCreate: 'diary' as EntryType,
+        };
+      }
+      if (activeChip === 'note') {
+        return {
+          Icon: Feather,
+          title: 'No regular notes',
+          desc: 'Jot down ideas, quick reminders, or rich text notes.',
+          btn: 'Create note',
+          typeToCreate: 'notes' as EntryType,
+        };
+      }
+      return {
+        Icon: Feather,
+        title: 'Capture your thoughts',
+        desc: 'A clean slate awaits. Tap the plus button to jot down an idea or reminder.',
+        btn: 'Create first note',
+        typeToCreate: 'notes' as EntryType,
+      };
+    }
+
     if (activeTab === 'todo') {
       return {
         Icon: ListTodo,
         title: 'No tasks yet',
         desc: 'Keep track of your day. Tap the plus button to add your first todo.',
         btn: 'Add task',
-      };
-    }
-    if (activeTab === 'vault' || activeTab === 'safe') {
-      return {
-        Icon: Shield,
-        title: 'Safe is empty',
-        desc: 'Confidential and secure space. Tap the plus button to store private notes.',
-        btn: 'Add to safe',
+        typeToCreate: 'todo' as EntryType,
       };
     }
     if (activeTab === 'favorites') {
@@ -995,6 +1134,7 @@ export function EmptyBody({
         title: 'No favorite notes',
         desc: 'Mark notes to keep your most important thoughts easily accessible.',
         btn: 'Create note',
+        typeToCreate: 'notes' as EntryType,
       };
     }
     if (activeTab === 'diary') {
@@ -1003,6 +1143,7 @@ export function EmptyBody({
         title: 'No diary entries yet',
         desc: 'Reflect and journal your daily thoughts privately.',
         btn: 'Write journal',
+        typeToCreate: 'diary' as EntryType,
       };
     }
     if (activeTab === 'archive') {
@@ -1011,6 +1152,7 @@ export function EmptyBody({
         title: 'Archive is empty',
         desc: 'Archived notes will be preserved here safely away from your main stream.',
         btn: null,
+        typeToCreate: undefined,
       };
     }
     return {
@@ -1018,6 +1160,7 @@ export function EmptyBody({
       title: 'Capture your thoughts',
       desc: 'A clean slate awaits. Tap the plus button to jot down an idea or reminder.',
       btn: 'Create first note',
+      typeToCreate: 'notes' as EntryType,
     };
   };
 
@@ -1098,14 +1241,74 @@ function estimateNoteHeight(note: NoteItem): number {
     return cols;
   }, [filteredNotes, columnCount]);
 
-  // If there are notes to show
-  if (filteredNotes.length > 0) {
-    return (
-      <main
-        ref={scrollContainerRef}
-        className="flex-1 min-h-0 w-full px-3.5 sm:px-5 md:px-8 lg:px-10 pt-3 md:pt-6 pb-28 md:pb-8 overflow-y-auto overscroll-contain no-scrollbar relative"
-      >
-        {/* Horizontal-first Responsive Masonry Grid */}
+  return (
+    <main
+      ref={scrollContainerRef}
+      className="flex-1 min-h-0 w-full px-3.5 sm:px-5 md:px-8 lg:px-10 pt-1.5 sm:pt-2 md:pt-4 pb-28 md:pb-8 overflow-y-auto overscroll-contain no-scrollbar relative flex flex-col"
+    >
+      {/* Home Category Filter Chips Bar */}
+      {showHomeChips && (
+        <div
+          id="home-chips-bar"
+          className={`sticky top-0 z-20 shrink-0 -mx-3.5 sm:-mx-5 md:-mx-8 lg:-mx-10 px-3.5 sm:px-5 md:px-8 lg:px-10 pt-1 pb-3 mb-2 md:mb-3.5 backdrop-blur-xl transition-colors duration-200 ${
+            isDark ? 'bg-[#09090b]/90' : 'bg-[#f4f4f6]/90'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+            {CHIPS.map((chip) => {
+              const ChipIcon = chip.icon;
+              const isActive = activeChip === chip.id;
+              const count = chipCounts[chip.id];
+              return (
+                <button
+                  key={chip.id}
+                  id={`home-chip-${chip.id}`}
+                  type="button"
+                  onClick={() => handleChipClick(chip.id)}
+                  className={`h-8 sm:h-8.5 px-3 sm:px-3.5 rounded-full inline-flex items-center gap-1.5 shrink-0 text-xs sm:text-[13px] font-medium tracking-tight active:scale-95 transition-all duration-150 cursor-pointer select-none ${
+                    isActive
+                      ? isDark
+                        ? 'bg-neutral-100 text-neutral-950 font-semibold shadow-xs'
+                        : 'bg-neutral-900 text-white font-semibold shadow-xs'
+                      : isDark
+                      ? 'bg-[#18181b] hover:bg-[#222226] text-neutral-400 hover:text-neutral-200 border border-neutral-800/80'
+                      : 'bg-[#eeeff2] hover:bg-[#e4e6ea] text-neutral-600 hover:text-neutral-900 border border-neutral-200/80'
+                  }`}
+                >
+                  <ChipIcon
+                    className={`w-3.5 h-3.5 stroke-[2] shrink-0 transition-colors ${
+                      isActive
+                        ? isDark
+                          ? 'text-neutral-950'
+                          : 'text-white'
+                        : isDark
+                        ? 'text-neutral-400'
+                        : 'text-neutral-500'
+                    }`}
+                  />
+                  <span className="whitespace-nowrap">{chip.label}</span>
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none transition-colors ${
+                      isActive
+                        ? isDark
+                          ? 'bg-neutral-950/15 text-neutral-950'
+                          : 'bg-white/20 text-white'
+                        : isDark
+                        ? 'bg-neutral-800 text-neutral-400'
+                        : 'bg-neutral-300/70 text-neutral-600'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Content Area: Masonry Cards Grid OR Clean Empty State */}
+      {filteredNotes.length > 0 ? (
         <div
           className="grid gap-3 md:gap-3.5 items-start"
           style={{
@@ -1114,7 +1317,7 @@ function estimateNoteHeight(note: NoteItem): number {
         >
           {columnNotes.map((col, colIndex) => (
             <div key={`col-${colIndex}`} className="flex flex-col gap-3 md:gap-3.5 min-w-0">
-              {col.map((note, noteIdx) => (
+              {col.map((note) => (
                 <NoteCard
                   key={`card-${note.id}`}
                   note={note}
@@ -1140,75 +1343,72 @@ function estimateNoteHeight(note: NoteItem): number {
             </div>
           ))}
         </div>
-
-        {/* Floating Context Menu for Desktop Right Click (suppressed on mobile/touch) */}
-        <CardContextMenu
-          isOpen={!!contextMenu}
-          position={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
-          note={contextMenu?.note ?? null}
-          theme={theme}
-          onClose={handleCloseContextMenu}
-          onEdit={(note) => onEditNote?.(note)}
-          onDelete={(id) => onDeleteNote?.(id)}
-          onToggleFavorite={(id) => onToggleFavorite?.(id)}
-        />
-      </main>
-    );
-  }
-
-  // Pure clean, beautiful empty body
-  return (
-    <main
-      id="empty-body"
-      className="flex-1 min-h-0 w-full px-6 flex flex-col items-center justify-center text-center pb-28 md:pb-8 overflow-y-auto overscroll-contain select-none"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-        className="max-w-xs flex flex-col items-center"
-      >
+      ) : (
         <div
-          className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 transition-colors ${
-            isDark
-              ? 'bg-[#181818] text-neutral-400 shadow-sm'
-              : 'bg-[#eeeff2] text-neutral-600 shadow-sm'
-          }`}
+          id="empty-body"
+          className="flex-1 min-h-[280px] flex flex-col items-center justify-center text-center px-4 py-12 select-none"
         >
-          <Icon className="w-6 h-6 stroke-[1.6]" />
-        </div>
-
-        <h2
-          className={`text-lg font-medium tracking-tight ${
-            isDark ? 'text-neutral-200' : 'text-neutral-800'
-          }`}
-        >
-          {emptyState.title}
-        </h2>
-
-        <p
-          className={`text-xs mt-1.5 leading-relaxed max-w-[240px] ${
-            isDark ? 'text-neutral-500' : 'text-neutral-500'
-          }`}
-        >
-          {emptyState.desc}
-        </p>
-
-        {emptyState.btn && (
-          <button
-            type="button"
-            onClick={onOpenNewNote}
-            className={`mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium active:scale-95 transition-all shadow-sm ${
-              isDark
-                ? 'bg-[#181818] hover:bg-[#222222] text-neutral-300 hover:text-white'
-                : 'bg-[#eeeff2] hover:bg-[#e4e6ea] text-neutral-700 hover:text-neutral-900'
-            }`}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.25 }}
+            className="max-w-xs flex flex-col items-center"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{emptyState.btn}</span>
-          </button>
-        )}
-      </motion.div>
+            <div
+              className={`w-13 h-13 rounded-full flex items-center justify-center mb-3.5 transition-colors ${
+                isDark
+                  ? 'bg-[#18181b] text-neutral-400 border border-neutral-800/80 shadow-xs'
+                  : 'bg-[#eeeff2] text-neutral-600 border border-neutral-200/80 shadow-xs'
+              }`}
+            >
+              <Icon className="w-5.5 h-5.5 stroke-[1.7]" />
+            </div>
+
+            <h2
+              className={`text-base sm:text-lg font-semibold tracking-tight ${
+                isDark ? 'text-neutral-200' : 'text-neutral-800'
+              }`}
+            >
+              {emptyState.title}
+            </h2>
+
+            <p
+              className={`text-xs mt-1 leading-relaxed max-w-[240px] ${
+                isDark ? 'text-neutral-400' : 'text-neutral-500'
+              }`}
+            >
+              {emptyState.desc}
+            </p>
+
+            {emptyState.btn && (
+              <button
+                type="button"
+                onClick={() => onOpenNewNote(emptyState.typeToCreate)}
+                className={`mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium active:scale-95 transition-all shadow-xs cursor-pointer ${
+                  isDark
+                    ? 'bg-[#18181b] hover:bg-[#222226] text-neutral-300 hover:text-white border border-neutral-800'
+                    : 'bg-[#eeeff2] hover:bg-[#e4e6ea] text-neutral-700 hover:text-neutral-900 border border-neutral-200'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{emptyState.btn}</span>
+              </button>
+            )}
+          </motion.div>
+        </div>
+      )}
+
+      {/* Floating Context Menu for Desktop Right Click (suppressed on mobile/touch) */}
+      <CardContextMenu
+        isOpen={!!contextMenu}
+        position={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
+        note={contextMenu?.note ?? null}
+        theme={theme}
+        onClose={handleCloseContextMenu}
+        onEdit={(note) => onEditNote?.(note)}
+        onDelete={(id) => onDeleteNote?.(id)}
+        onToggleFavorite={(id) => onToggleFavorite?.(id)}
+      />
     </main>
   );
 }

@@ -10,6 +10,7 @@ interface SearchDrawerProps {
   isOpen: boolean;
   theme: ThemeMode;
   notes: NoteItem[];
+  autoOpenKeyboard?: boolean;
   onClose: () => void;
   onSelectNote: (note: NoteItem) => void;
   onCreateWithTitle: (title: string) => void;
@@ -27,6 +28,7 @@ export function SearchDrawer({
   isOpen,
   theme,
   notes,
+  autoOpenKeyboard = true,
   onClose,
   onSelectNote,
   onCreateWithTitle,
@@ -42,11 +44,13 @@ export function SearchDrawer({
     if (isOpen) {
       setQuery('');
       setActiveCategory('all');
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 150);
+      if (autoOpenKeyboard) {
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 150);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, autoOpenKeyboard]);
 
   const filteredNotes = useMemo(() => {
     const seen = new Set<string>();

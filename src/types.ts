@@ -34,6 +34,7 @@ export interface TodoSubItem {
   id: string;
   text: string;
   completed: boolean;
+  dueDate?: string; // YYYY-MM-DD
 }
 
 export interface VoiceNoteAttachment {
@@ -55,6 +56,8 @@ export interface NoteItem {
   isSafe?: boolean;
   isDiary?: boolean;
   isArchived?: boolean;
+  isTodayList?: boolean;
+  todayDate?: string;
   entryType?: EntryType;
   email?: string;
   service?: string;
@@ -69,6 +72,7 @@ export interface NoteItem {
 }
 
 export type CategoryFilter = 'all' | 'todo' | 'safe' | 'diary' | 'notes';
+export type HomeChipFilter = 'all' | 'note' | 'safe' | 'key' | 'todo' | 'diary';
 
 export function getNoteCategory(note: NoteItem): 'todo' | 'safe' | 'diary' | 'notes' {
   if (note.entryType === 'todo' || !!note.isTodo) return 'todo';

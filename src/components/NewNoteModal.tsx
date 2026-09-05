@@ -31,6 +31,7 @@ import { capitalizeFirstChar } from '../lib/formatters';
 interface NewNoteModalProps {
   isOpen: boolean;
   theme: ThemeMode;
+  autoOpenKeyboard?: boolean;
   initialType?: EntryType;
   editingNote?: NoteItem | null;
   onClose: () => void;
@@ -102,6 +103,7 @@ const generateTodoId = () =>
 export function NewNoteModal({
   isOpen,
   theme,
+  autoOpenKeyboard = true,
   initialType = 'notes',
   editingNote,
   onClose,
@@ -276,11 +278,13 @@ export function NewNoteModal({
       setActivePlayingId(null);
       setPlaybackTime(0);
 
-      setTimeout(() => {
-        titleInputRef.current?.focus();
-      }, 150);
+      if (autoOpenKeyboard) {
+        setTimeout(() => {
+          titleInputRef.current?.focus();
+        }, 150);
+      }
     }
-  }, [isOpen, editingNote, initialType]);
+  }, [isOpen, editingNote, initialType, autoOpenKeyboard]);
 
   // Cleanup audio, recording & speech on unmount
   useEffect(() => {

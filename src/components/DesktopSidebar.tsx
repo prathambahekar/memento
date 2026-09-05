@@ -4,6 +4,7 @@ import {
   Shield,
   Bookmark,
   BookOpen,
+  Archive,
   Settings,
   Plus,
   ArrowUpDown,
@@ -98,6 +99,13 @@ export function DesktopSidebar({
       icon: BookOpen,
       isActive: currentPage === 'main' && activeTab === 'diary',
       onClick: () => onSelectTab('diary'),
+    },
+    {
+      id: 'archive' as NavTab,
+      label: 'Archive',
+      icon: Archive,
+      isActive: currentPage === 'main' && activeTab === 'archive',
+      onClick: () => onSelectTab('archive'),
     },
     {
       id: 'reorder',

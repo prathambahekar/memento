@@ -12,7 +12,7 @@ import { TodoDrawer, parseTodoItemsFromNote } from './components/TodoDrawer';
 import { DiaryDrawer } from './components/DiaryDrawer';
 import { DataDrawer } from './components/DataDrawer';
 import { DesktopSidebar } from './components/DesktopSidebar';
-import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem, VoiceNoteAttachment, AppPage } from './types';
+import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem, VoiceNoteAttachment, AppPage, HomeChipFilter } from './types';
 import {
   updateNativeStatusBar,
   registerNativeBackButton,
@@ -37,10 +37,20 @@ export default function App() {
   const [selectedDiaryNote, setSelectedDiaryNote] = useState<NoteItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isReorderMode, setIsReorderMode] = useState(false);
+  const [homeChip, setHomeChip] = useState<HomeChipFilter>('all');
+  const [newNoteInitialType, setNewNoteInitialType] = useState<EntryType | undefined>(undefined);
 
-  const handleOpenNewNote = () => {
+  const handleOpenNewNote = (preferredType?: EntryType) => {
     setEditingNote(null);
+    setNewNoteInitialType(preferredType);
     setIsNewNoteOpen(true);
+  };
+
+  const handleSelectHomeChip = (chip: HomeChipFilter) => {
+    setHomeChip(chip);
+    if (activeTab !== 'home' && activeTab !== 'notes') {
+      setActiveTab('home');
+    }
   };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
@@ -77,6 +87,20 @@ export default function App() {
     setIsNavbarFloating((prev) => {
       const next = !prev;
       localStorage.setItem('memento_navbar_floating', String(next));
+      return next;
+    });
+  };
+
+  const [autoOpenKeyboard, setAutoOpenKeyboard] = useState<boolean>(() => {
+    const saved = localStorage.getItem('memento_auto_open_keyboard');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const toggleAutoOpenKeyboard = () => {
+    triggerHaptic('selection');
+    setAutoOpenKeyboard((prev) => {
+      const next = !prev;
+      localStorage.setItem('memento_auto_open_keyboard', String(next));
       return next;
     });
   };
@@ -329,6 +353,15 @@ export default function App() {
     );
   };
 
+  const handleUpdateNote = (updatedNote: NoteItem) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
+    );
+    if (selectedTodoNote?.id === updatedNote.id) {
+      setSelectedTodoNote(updatedNote);
+    }
+  };
+
   const handleToggleFavorite = (id: string) => {
     triggerHaptic('light');
     setNotes((prev) =>
@@ -376,6 +409,11 @@ export default function App() {
             if (tab === 'todo') {
               setCurrentPage('todo');
             } else {
+              if (tab === 'vault' || tab === 'safe') {
+                setHomeChip('safe');
+              } else if (tab === 'home' || tab === 'notes') {
+                setHomeChip('all');
+              }
               setActiveTab(tab);
               setCurrentPage('main');
             }
@@ -397,10 +435,12 @@ export default function App() {
               theme={theme}
               notes={notes}
               isNavbarFloating={isNavbarFloating}
+              autoOpenKeyboard={autoOpenKeyboard}
               onBack={() => setCurrentPage('main')}
               onOpenSearch={() => setIsSearchDrawerOpen(true)}
               onToggleTheme={toggleTheme}
               onToggleNavbarFloating={toggleNavbarFloating}
+              onToggleAutoOpenKeyboard={toggleAutoOpenKeyboard}
               onClearAllNotes={() => setNotes([])}
               onImportNotes={(imported) => {
                 const seen = new Set<string>();
@@ -418,13 +458,15 @@ export default function App() {
           ) : currentPage === 'todo' ? (
             <TodoPage
               theme={theme}
+              notes={notes}
+              autoOpenKeyboard={autoOpenKeyboard}
               onBack={() => setCurrentPage('main')}
+              onUpdateNote={handleUpdateNote}
+              onAddNote={(newNote) => setNotes((prev) => [newNote, ...prev])}
+              onDeleteNote={handleDeleteNote}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               onOpenSearch={() => setIsSearchDrawerOpen(true)}
-              onSaveAsNote={(title, content) =>
-                handleSaveNote(title, content, { entryType: 'todo', isTodo: true })
-              }
             />
           ) : (
             <>
@@ -432,6 +474,7 @@ export default function App() {
               <TopBar
                 theme={theme}
                 activeTab={activeTab}
+                activeChip={homeChip}
                 isSidebarCollapsed={isSidebarCollapsed}
                 onToggleSidebar={toggleSidebar}
                 searchQuery={searchQuery}
@@ -446,6 +489,8 @@ export default function App() {
                 notes={notes}
                 searchQuery={searchQuery}
                 isReorderMode={isReorderMode}
+                selectedChip={homeChip}
+                onSelectChip={handleSelectHomeChip}
                 onOpenNewNote={handleOpenNewNote}
                 onSelectNote={handleSelectNote}
                 onToggleTodoItem={handleToggleTodoItem}
@@ -476,6 +521,11 @@ export default function App() {
               if (tab === 'todo') {
                 setCurrentPage('todo');
               } else {
+                if (tab === 'vault' || tab === 'safe') {
+                  setHomeChip('safe');
+                } else if (tab === 'home' || tab === 'notes') {
+                  setHomeChip('all');
+                }
                 setActiveTab(tab);
                 setCurrentPage('main');
               }
@@ -491,6 +541,7 @@ export default function App() {
           isOpen={isSearchDrawerOpen}
           theme={theme}
           notes={notes}
+          autoOpenKeyboard={autoOpenKeyboard}
           onClose={() => setIsSearchDrawerOpen(false)}
           onSelectNote={(note) => {
             handleSelectNote(note);
@@ -507,14 +558,13 @@ export default function App() {
           onToggleTheme={toggleTheme}
           onClose={() => setIsDrawerOpen(false)}
           onSelectItem={handleDrawerSelect}
-          isReorderMode={isReorderMode}
-          onToggleReorder={() => setIsReorderMode((prev) => !prev)}
         />
 
         {/* New Note Composer Sheet opened by '+' button */}
         <NewNoteModal
           isOpen={isNewNoteOpen}
           theme={theme}
+          autoOpenKeyboard={autoOpenKeyboard}
           editingNote={editingNote}
           initialType={
             editingNote
@@ -524,17 +574,19 @@ export default function App() {
                   : editingNote.isSafe || editingNote.isVault
                   ? 'passwords'
                   : 'notes')
-              : currentPage === 'todo' || activeTab === 'todo'
-              ? 'todo'
-              : activeTab === 'vault' || activeTab === 'safe'
-              ? 'passwords'
-              : activeTab === 'diary'
-              ? 'diary'
-              : 'notes'
+              : newNoteInitialType ||
+                (currentPage === 'todo' || activeTab === 'todo' || homeChip === 'todo'
+                  ? 'todo'
+                  : activeTab === 'vault' || activeTab === 'safe' || homeChip === 'safe' || homeChip === 'key'
+                  ? 'passwords'
+                  : activeTab === 'diary' || homeChip === 'diary'
+                  ? 'diary'
+                  : 'notes')
           }
           onClose={() => {
             setIsNewNoteOpen(false);
             setEditingNote(null);
+            setNewNoteInitialType(undefined);
           }}
           onSaveNote={handleSaveNote}
           onUpdateNote={(updated) => {

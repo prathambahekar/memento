@@ -39,12 +39,19 @@ export function parseTodoItemsFromNote(note: NoteItem): TodoSubItem[] {
     if (bracketMatches.length > 0) {
       bracketMatches.forEach((m, idx) => {
         const isCompleted = m[1].toLowerCase() === 'x';
-        const taskText = m[2].trim();
+        let taskText = m[2].trim();
+        let dueDate: string | undefined = undefined;
+        const dateMatch = taskText.match(/@(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          dueDate = dateMatch[1];
+          taskText = taskText.replace(/@\d{4}-\d{2}-\d{2}/, '').trim();
+        }
         if (taskText) {
           rawItems.push({
             id: `todo-${note.id || 'note'}-${idx}`,
             text: taskText,
             completed: isCompleted,
+            dueDate,
           });
         }
       });

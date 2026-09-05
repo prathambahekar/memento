@@ -1,10 +1,11 @@
 import { Search, X } from 'lucide-react';
-import { NavTab, ThemeMode } from '../types';
+import { NavTab, ThemeMode, HomeChipFilter } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 
 interface TopBarProps {
   theme: ThemeMode;
   activeTab?: NavTab;
+  activeChip?: HomeChipFilter;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   searchQuery?: string;
@@ -16,6 +17,7 @@ interface TopBarProps {
 export function TopBar({
   theme,
   activeTab = 'home',
+  activeChip,
   searchQuery = '',
   onSearchChange,
   onOpenSearch,
@@ -33,7 +35,19 @@ export function TopBar({
     archive: 'Archive',
   };
 
-  const currentTitle = sectionTitles[activeTab] || 'Notes';
+  const chipTitles: Record<HomeChipFilter, string> = {
+    all: 'All Notes',
+    note: 'Notes',
+    safe: 'Safe Vault',
+    key: 'Keys & Passwords',
+    todo: 'Todo Tasks',
+    diary: 'Personal Diary',
+  };
+
+  const currentTitle =
+    (activeTab === 'home' || activeTab === 'notes') && activeChip
+      ? chipTitles[activeChip] || 'Notes'
+      : sectionTitles[activeTab] || 'Notes';
 
   return (
     <header className="shrink-0 relative w-full z-20 px-5 md:px-8 pt-[max(calc(var(--safe-top,0px)+0.75rem),1.25rem)] md:pt-6 pb-3 md:pb-4 flex items-center justify-between transition-colors">

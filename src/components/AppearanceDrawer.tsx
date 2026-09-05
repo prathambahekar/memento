@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Palette, Moon, Sun, Layout, Check } from 'lucide-react';
+import { Palette, Moon, Sun, Layout, Check, Keyboard } from 'lucide-react';
 import { ThemeMode } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 
@@ -10,6 +10,8 @@ interface AppearanceDrawerProps {
   onToggleTheme: () => void;
   isNavbarFloating: boolean;
   onToggleNavbarFloating: () => void;
+  autoOpenKeyboard?: boolean;
+  onToggleAutoOpenKeyboard?: () => void;
 }
 
 export function AppearanceDrawer({
@@ -19,6 +21,8 @@ export function AppearanceDrawer({
   onToggleTheme,
   isNavbarFloating,
   onToggleNavbarFloating,
+  autoOpenKeyboard = true,
+  onToggleAutoOpenKeyboard,
 }: AppearanceDrawerProps) {
   const isDark = theme === 'dark';
 
@@ -222,6 +226,62 @@ export function AppearanceDrawer({
                     <span>Floating</span>
                     {isNavbarFloating && <Check className="w-3.5 h-3.5 ml-0.5" />}
                   </button>
+                </div>
+              </div>
+
+              {/* CARD 3: Auto Open Keyboard */}
+              <div
+                id="appearance-auto-open-keyboard-card"
+                onClick={() => {
+                  triggerHaptic('selection');
+                  onToggleAutoOpenKeyboard?.();
+                }}
+                role="button"
+                tabIndex={0}
+                className={`p-4 rounded-2xl border cursor-pointer active:scale-[0.99] transition-all flex items-center justify-between ${
+                  isDark
+                    ? 'bg-[#18181b] border-neutral-800/80 hover:bg-[#1f1f23]'
+                    : 'bg-[#f8f9fa] border-neutral-200/80 hover:bg-[#f1f3f5]'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0 pr-2">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      isDark ? 'bg-[#27272a] text-white' : 'bg-white text-neutral-800 shadow-xs'
+                    }`}
+                  >
+                    <Keyboard className="w-4.5 h-4.5 stroke-[1.8]" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold truncate">Auto Open Keyboard</h3>
+                    <p className={`text-xs truncate ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                      Auto-open soft keyboard when focusing inputs & search
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0 flex items-center">
+                  <div
+                    role="switch"
+                    aria-checked={autoOpenKeyboard}
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out ${
+                      autoOpenKeyboard
+                        ? isDark
+                          ? 'bg-[#52525b]'
+                          : 'bg-neutral-800'
+                        : isDark
+                        ? 'bg-[#27272a]'
+                        : 'bg-neutral-300'
+                    }`}
+                  >
+                    <motion.span
+                      layout
+                      transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                      className={`pointer-events-none inline-block h-6 w-6 rounded-full bg-white shadow-sm ring-0 ${
+                        autoOpenKeyboard ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

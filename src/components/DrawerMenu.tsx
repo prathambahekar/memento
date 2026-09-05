@@ -3,8 +3,7 @@ import {
   Bookmark,
   Settings,
   BookOpen,
-  ArrowUpDown,
-  Check,
+  Archive,
   Moon,
   Sun,
 } from 'lucide-react';
@@ -26,8 +25,6 @@ export function DrawerMenu({
   onSelectItem,
   theme,
   onToggleTheme,
-  isReorderMode = false,
-  onToggleReorder,
 }: DrawerMenuProps) {
   const isDark = theme === 'dark';
 
@@ -35,24 +32,11 @@ export function DrawerMenu({
   const modules = [
     { id: 'favorites', label: 'Favourites', icon: Bookmark },
     { id: 'diary', label: 'Diary', icon: BookOpen },
-    {
-      id: 'reorder',
-      label: isReorderMode ? 'Done' : 'Reorder',
-      icon: isReorderMode ? Check : ArrowUpDown,
-    },
+    { id: 'archive', label: 'Archive', icon: Archive },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   const handleModuleClick = (id: string) => {
-    if (id === 'reorder') {
-      if (onToggleReorder) {
-        onToggleReorder();
-      } else {
-        onSelectItem?.('reorder');
-      }
-      onClose();
-      return;
-    }
     onSelectItem?.(id);
     onClose();
   };
@@ -100,37 +84,28 @@ export function DrawerMenu({
                 FEATURES & MODULES
               </div>
 
-              {/* Grid with cards (4 columns, adjusted for mobile ergonomics) */}
-              <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
+              {/* Grid with cards (3 columns for Favourites, Diary, Settings) */}
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
                 {modules.map((module) => {
                   const Icon = module.icon;
-                  const isReorderActive = module.id === 'reorder' && isReorderMode;
                   return (
                     <button
                       key={module.id}
                       id={`module-btn-${module.id}`}
                       type="button"
                       onClick={() => handleModuleClick(module.id)}
-                      className={`py-2.5 px-1 sm:py-3 sm:px-2 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center text-center gap-1.5 min-h-[64px] sm:min-h-[70px] active:scale-95 transition-all ${
-                        isReorderActive
-                          ? isDark
-                            ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-500/50 ring-1 ring-emerald-500/30'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-300 ring-1 ring-emerald-400/30'
-                          : isDark
+                      className={`py-3 px-2 rounded-2xl flex flex-col items-center justify-center text-center gap-1.5 min-h-[70px] active:scale-95 transition-all ${
+                        isDark
                           ? 'bg-[#1a1a1a] hover:bg-[#222222] text-neutral-200 hover:text-white'
                           : 'bg-[#f4f5f8] hover:bg-[#eaecee] text-neutral-800'
                       }`}
                     >
                       <Icon
                         className={`w-5 h-5 sm:w-5.5 sm:h-5.5 stroke-[1.8] ${
-                          isReorderActive
-                            ? 'text-emerald-400'
-                            : isDark
-                            ? 'text-neutral-300'
-                            : 'text-neutral-800'
+                          isDark ? 'text-neutral-300' : 'text-neutral-800'
                         }`}
                       />
-                      <span className="text-[11px] sm:text-xs font-medium tracking-tight line-clamp-1 leading-tight">
+                      <span className="text-xs font-medium tracking-tight line-clamp-1 leading-tight">
                         {module.label}
                       </span>
                     </button>
