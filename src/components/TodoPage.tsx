@@ -28,6 +28,7 @@ import { triggerHaptic } from '../lib/capacitor';
 import { TodoDrawer, parseTodoItemsFromNote } from './TodoDrawer';
 import { TaskDrawer } from './TaskDrawer';
 import { DayDetailsDrawer } from './DayDetailsDrawer';
+import { ArchiveDrawer } from './ArchiveDrawer';
 
 export type TodoTab = 'inbox' | 'today' | 'upcoming';
 
@@ -152,8 +153,8 @@ export function TodoPage({
     task: TodoSubItem;
   } | null>(null);
 
-  // Collapsible section for archived lists in Inbox
-  const [isArchiveSectionOpen, setIsArchiveSectionOpen] = useState(false);
+  // Archive drawer open state
+  const [isArchiveDrawerOpen, setIsArchiveDrawerOpen] = useState(false);
 
   // Filter active todo notes from home page notes (excluding archived)
   const todoLists = useMemo(() => {
@@ -1375,13 +1376,14 @@ export function TodoPage({
               </div>
             )}
 
-            {/* Archived Lists Section - Above Today and other lists without splitting lines */}
+            {/* Archived Lists Section - Opens Archive Drawer */}
             <div className="space-y-2">
               <button
+                id="open-archive-drawer-btn"
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  setIsArchiveSectionOpen((prev) => !prev);
+                  setIsArchiveDrawerOpen(true);
                 }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-colors ${
                   isDark
@@ -1400,153 +1402,8 @@ export function TodoPage({
                     {archivedTodoLists.length}
                   </span>
                 </div>
-                {isArchiveSectionOpen ? (
-                  <ChevronUp className="w-4 h-4 text-neutral-400" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-neutral-400" />
-                )}
+                <ChevronRight className="w-4 h-4 text-neutral-400" />
               </button>
-
-              <AnimatePresence>
-                {isArchiveSectionOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18 }}
-                    className="space-y-2 overflow-hidden"
-                  >
-                    {archivedTodoLists.length === 0 ? (
-                      <div
-                        className={`p-4 rounded-2xl border text-center text-xs ${
-                          isDark
-                            ? 'bg-[#141416]/60 border-neutral-800/70 text-neutral-500'
-                            : 'bg-neutral-50 border-neutral-200/80 text-neutral-400'
-                        }`}
-                      >
-                        No archived lists
-                      </div>
-                    ) : (
-                      <>
-                        <p className={`text-[11px] px-2 italic ${isDark ? 'text-neutral-500' : 'text-neutral-400'}`}>
-                          Past daily lists and archived todo lists are preserved here.
-                        </p>
-                        {archivedTodoLists.map((list) => {
-                          const items = parseTodoItemsFromNote(list);
-                          const completedCount = items.filter((t) => t.completed).length;
-                          const totalCount = items.length;
-                          const pendingCount = totalCount - completedCount;
-
-                          return (
-                            <div
-                              key={`archived-list-${list.id}`}
-                              onClick={() => {
-                                triggerHaptic('light');
-                                setSelectedTodoNoteForDrawer(list);
-                              }}
-                              className={`group w-full p-3.5 rounded-2xl cursor-pointer transition-all active:scale-[0.99] flex items-center justify-between gap-3 border opacity-85 hover:opacity-100 ${
-                                isDark
-                                  ? 'bg-[#121214] hover:bg-[#18181b] border-neutral-800/70'
-                                  : 'bg-neutral-50 hover:bg-white border-neutral-200/80 shadow-2xs'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                <div
-                                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                                    isDark ? 'bg-neutral-800 text-neutral-400' : 'bg-neutral-200 text-neutral-600'
-                                  }`}
-                                >
-                                  <Archive className="w-4 h-4" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <h4
-                                      className={`text-sm font-medium tracking-tight truncate ${
-                                        isDark ? 'text-neutral-300' : 'text-neutral-800'
-                                      }`}
-                                    >
-                                      {list.title || 'Archived List'}
-                                    </h4>
-                                    {list.isTodayList && (
-                                      <span
-                                        className={`text-[10px] font-medium px-1.5 py-0.2 rounded ${
-                                          isDark
-                                            ? 'bg-neutral-800 text-neutral-400 border border-neutral-700/50'
-                                            : 'bg-neutral-200 text-neutral-600 border border-neutral-300/50'
-                                        }`}
-                                      >
-                                        Past Today
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div
-                                    className={`flex items-center gap-2 mt-0.5 text-[11px] ${
-                                      isDark ? 'text-neutral-500' : 'text-neutral-400'
-                                    }`}
-                                  >
-                                    <span>
-                                      {totalCount === 0 ? 'No tasks' : `${totalCount} tasks`}
-                                    </span>
-                                    {totalCount > 0 && (
-                                      <>
-                                        <span>•</span>
-                                        <span>
-                                          {completedCount === totalCount
-                                            ? 'All done'
-                                            : `${completedCount} done`}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div
-                                className="flex items-center gap-1 shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    triggerHaptic('success');
-                                    onUpdateNote({ ...list, isArchived: false });
-                                  }}
-                                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-75 hover:opacity-100 ${
-                                    isDark
-                                      ? 'hover:bg-emerald-500/20 text-neutral-400 hover:text-emerald-400'
-                                      : 'hover:bg-emerald-50 text-neutral-500 hover:text-emerald-600'
-                                  }`}
-                                  aria-label="Restore list"
-                                  title="Restore list to Inbox"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    triggerHaptic('medium');
-                                    handleSafeDeleteNote(list.id);
-                                  }}
-                                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-75 hover:opacity-100 ${
-                                    isDark
-                                      ? 'hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400'
-                                      : 'hover:bg-rose-50 text-neutral-500 hover:text-rose-600'
-                                  }`}
-                                  aria-label="Delete list"
-                                  title="Delete permanently"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             {/* Todo Lists in Inbox */}
@@ -2358,6 +2215,24 @@ export function TodoPage({
           if (target) {
             onUpdateNote({ ...target, isFavorite: !target.isFavorite });
           }
+        }}
+      />
+
+      {/* Archive Drawer */}
+      <ArchiveDrawer
+        isOpen={isArchiveDrawerOpen}
+        theme={theme}
+        archivedLists={archivedTodoLists}
+        onClose={() => setIsArchiveDrawerOpen(false)}
+        onSelectList={(list) => {
+          setIsArchiveDrawerOpen(false);
+          setSelectedTodoNoteForDrawer(list);
+        }}
+        onRestoreList={(list) => {
+          onUpdateNote({ ...list, isArchived: false });
+        }}
+        onDeleteList={(id) => {
+          handleSafeDeleteNote(id);
         }}
       />
     </motion.div>

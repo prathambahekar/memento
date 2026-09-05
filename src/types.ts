@@ -37,6 +37,22 @@ export interface TodoSubItem {
   dueDate?: string; // YYYY-MM-DD
 }
 
+export interface DocumentAttachment {
+  id: string;
+  name: string;
+  size?: string;
+  type?: string;
+  dataUrl: string;
+  uploadedAt?: string;
+}
+
+export interface PersonalInfoField {
+  id: string;
+  label: string;
+  value: string;
+  isMasked?: boolean;
+}
+
 export interface VoiceNoteAttachment {
   id: string;
   audioUrl: string;
@@ -69,6 +85,8 @@ export interface NoteItem {
   voiceNotes?: VoiceNoteAttachment[];
   imageUrl?: string;
   images?: string[];
+  documents?: DocumentAttachment[];
+  personalInfo?: PersonalInfoField[];
 }
 
 export type CategoryFilter = 'all' | 'todo' | 'safe' | 'diary' | 'notes';

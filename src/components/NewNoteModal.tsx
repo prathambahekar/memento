@@ -20,8 +20,22 @@ import {
   Play,
   Pause,
   Square,
+  FileText,
+  CreditCard,
+  Phone,
+  Shield,
+  FileUp,
+  Download,
 } from 'lucide-react';
-import { ThemeMode, EntryType, TodoSubItem, NoteItem, VoiceNoteAttachment } from '../types';
+import {
+  ThemeMode,
+  EntryType,
+  TodoSubItem,
+  NoteItem,
+  VoiceNoteAttachment,
+  DocumentAttachment,
+  PersonalInfoField,
+} from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { parseTodoItemsFromNote } from './TodoDrawer';
 import { triggerHaptic } from '../lib/capacitor';
@@ -52,6 +66,8 @@ interface NewNoteModalProps {
       voiceNotes?: VoiceNoteAttachment[];
       imageUrl?: string;
       images?: string[];
+      documents?: DocumentAttachment[];
+      personalInfo?: PersonalInfoField[];
     }
   ) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
@@ -135,6 +151,9 @@ export function NewNoteModal({
   // Bottom attachments & floating sub-menu
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [attachedDocs, setAttachedDocs] = useState<DocumentAttachment[]>([]);
+  const [personalInfoFields, setPersonalInfoFields] = useState<PersonalInfoField[]>([]);
+  const [safeSection, setSafeSection] = useState<'ids' | 'credentials'>('ids');
 
   // Voice recording & playback state (inside '+' sub-menu)
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -154,6 +173,7 @@ export function NewNoteModal({
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -248,6 +268,58 @@ export function NewNoteModal({
         } else {
           setAttachedImages([]);
         }
+
+        // Initialize documents
+        if (editingNote.documents && editingNote.documents.length > 0) {
+          setAttachedDocs(editingNote.documents);
+        } else {
+          setAttachedDocs([]);
+        }
+
+        // Initialize personal info
+        if (editingNote.personalInfo && editingNote.personalInfo.length > 0) {
+          setPersonalInfoFields(editingNote.personalInfo);
+          setSafeSection('ids');
+        } else if (editingNote.content && (determinedType === 'passwords' || editingNote.isSafe)) {
+          const lines = editingNote.content.split('\n');
+          const extracted: PersonalInfoField[] = [];
+          for (const line of lines) {
+            const lower = line.toLowerCase();
+            if (lower.startsWith('aadhaar:') || lower.startsWith('aadhaar number:')) {
+              extracted.push({
+                id: `pi-${Date.now()}-1`,
+                label: 'Aadhaar Number',
+                value: line.split(':')[1]?.trim() || '',
+                isMasked: true,
+              });
+            } else if (lower.startsWith('pan card:') || lower.startsWith('pan:')) {
+              extracted.push({
+                id: `pi-${Date.now()}-2`,
+                label: 'PAN Card Number',
+                value: line.split(':')[1]?.trim() || '',
+                isMasked: false,
+              });
+            } else if (lower.startsWith('phone:') || lower.startsWith('mobile:')) {
+              extracted.push({
+                id: `pi-${Date.now()}-3`,
+                label: 'Phone Number',
+                value: line.split(':')[1]?.trim() || '',
+                isMasked: false,
+              });
+            }
+          }
+          setPersonalInfoFields(extracted);
+          if (extracted.length > 0) {
+            setSafeSection('ids');
+          } else if (editingNote.password || editingNote.email) {
+            setSafeSection('credentials');
+          }
+        } else {
+          setPersonalInfoFields([]);
+          if (editingNote.password || editingNote.email) {
+            setSafeSection('credentials');
+          }
+        }
       } else {
         setEntryType(initialType);
         setTitle('');
@@ -262,6 +334,9 @@ export function NewNoteModal({
         setHasVoiceNote(false);
         setVoiceNotes([]);
         setAttachedImages([]);
+        setAttachedDocs([]);
+        setPersonalInfoFields([]);
+        setSafeSection('ids');
       }
 
       setNewTodoInput('');
@@ -426,6 +501,64 @@ export function NewNoteModal({
   const handleDeletePhoto = (index: number) => {
     setAttachedImages((prev) => prev.filter((_, i) => i !== index));
     triggerHaptic('selection');
+  };
+
+  const handleDocFilesChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileList = Array.from(files);
+      fileList.forEach((file: File) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            let sizeStr = '';
+            if (file.size < 1024) sizeStr = `${file.size} B`;
+            else if (file.size < 1024 * 1024) sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
+            else sizeStr = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+
+            const newDoc: DocumentAttachment = {
+              id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              name: file.name,
+              size: sizeStr,
+              type: file.type || 'application/octet-stream',
+              dataUrl: event.target.result as string,
+              uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            };
+            setAttachedDocs((prev) => [...prev, newDoc]);
+            triggerHaptic('success');
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteDoc = (id: string) => {
+    triggerHaptic('selection');
+    setAttachedDocs((prev) => prev.filter((d) => d.id !== id));
+  };
+
+  const handleAddPersonalInfoField = (label: string, defaultValue = '', isMasked = false) => {
+    triggerHaptic('selection');
+    const newField: PersonalInfoField = {
+      id: `pi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      label,
+      value: defaultValue,
+      isMasked,
+    };
+    setPersonalInfoFields((prev) => [...prev, newField]);
+  };
+
+  const handleUpdatePersonalInfoField = (id: string, updates: Partial<PersonalInfoField>) => {
+    setPersonalInfoFields((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+    );
+  };
+
+  const handleRemovePersonalInfoField = (id: string) => {
+    triggerHaptic('light');
+    setPersonalInfoFields((prev) => prev.filter((f) => f.id !== id));
   };
 
   const handleInsertTimestamp = () => {
@@ -847,10 +980,18 @@ export function NewNoteModal({
 
     if (editingNote && onUpdateNote) {
       if (entryType === 'passwords') {
-        finalTitle = capitalizeFirstChar(serviceName.trim() || emailUsername.trim() || 'Account Key');
+        finalTitle = capitalizeFirstChar(
+          serviceName.trim() ||
+            title.trim() ||
+            emailUsername.trim() ||
+            (personalInfoFields[0]?.label ? `${personalInfoFields[0].label} Record` : 'Safe Item')
+        );
         const lines = [];
         if (emailUsername) lines.push(`Email/Username: ${emailUsername}`);
         if (passwordValue) lines.push(`Password: ${passwordValue}`);
+        personalInfoFields.forEach((field) => {
+          if (field.value) lines.push(`${field.label}: ${field.value}`);
+        });
         if (secretNotes) lines.push(`Notes: ${secretNotes}`);
         finalContent = lines.join('\n');
 
@@ -864,6 +1005,8 @@ export function NewNoteModal({
           service: serviceName,
           email: emailUsername,
           password: passwordValue,
+          personalInfo: personalInfoFields.length > 0 ? personalInfoFields : undefined,
+          documents: attachedDocs.length > 0 ? attachedDocs : undefined,
           hasVoiceNote: hasAnyVoice,
           voiceDuration: primaryVoiceDur,
           voiceAudioUrl: primaryVoiceUrl,
@@ -893,6 +1036,7 @@ export function NewNoteModal({
           entryType: 'todo',
           isTodo: true,
           todoItems: finalTodoItems,
+          documents: attachedDocs.length > 0 ? attachedDocs : undefined,
           hasVoiceNote: hasAnyVoice,
           voiceDuration: primaryVoiceDur,
           voiceAudioUrl: primaryVoiceUrl,
@@ -907,6 +1051,7 @@ export function NewNoteModal({
           title: finalTitle,
           content: finalContent,
           entryType,
+          documents: attachedDocs.length > 0 ? attachedDocs : undefined,
           hasVoiceNote: hasAnyVoice,
           voiceDuration: primaryVoiceDur,
           voiceAudioUrl: primaryVoiceUrl,
@@ -916,10 +1061,18 @@ export function NewNoteModal({
         });
       }
     } else if (entryType === 'passwords') {
-      finalTitle = capitalizeFirstChar(serviceName.trim() || emailUsername.trim() || 'Account Key');
+      finalTitle = capitalizeFirstChar(
+        serviceName.trim() ||
+          title.trim() ||
+          emailUsername.trim() ||
+          (personalInfoFields[0]?.label ? `${personalInfoFields[0].label} Record` : 'Safe Item')
+      );
       const lines = [];
       if (emailUsername) lines.push(`Email/Username: ${emailUsername}`);
       if (passwordValue) lines.push(`Password: ${passwordValue}`);
+      personalInfoFields.forEach((field) => {
+        if (field.value) lines.push(`${field.label}: ${field.value}`);
+      });
       if (secretNotes) lines.push(`Notes: ${secretNotes}`);
       finalContent = lines.join('\n');
 
@@ -929,6 +1082,8 @@ export function NewNoteModal({
         service: serviceName,
         email: emailUsername,
         password: passwordValue,
+        personalInfo: personalInfoFields.length > 0 ? personalInfoFields : undefined,
+        documents: attachedDocs.length > 0 ? attachedDocs : undefined,
         hasVoiceNote: hasAnyVoice,
         voiceDuration: primaryVoiceDur,
         voiceAudioUrl: primaryVoiceUrl,
@@ -955,6 +1110,7 @@ export function NewNoteModal({
         entryType: 'todo',
         isTodo: true,
         todoItems: finalTodoItems,
+        documents: attachedDocs.length > 0 ? attachedDocs : undefined,
         hasVoiceNote: hasAnyVoice,
         voiceDuration: primaryVoiceDur,
         voiceAudioUrl: primaryVoiceUrl,
@@ -966,6 +1122,7 @@ export function NewNoteModal({
       finalTitle = capitalizeFirstChar(title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note'));
       onSaveNote(finalTitle, finalContent, {
         entryType,
+        documents: attachedDocs.length > 0 ? attachedDocs : undefined,
         hasVoiceNote: hasAnyVoice,
         voiceDuration: primaryVoiceDur,
         voiceAudioUrl: primaryVoiceUrl,
@@ -1197,7 +1354,7 @@ export function NewNoteModal({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.15 }}
-                    className="space-y-2.5"
+                    className="space-y-3"
                   >
                     {/* Title */}
                     <div
@@ -1211,7 +1368,7 @@ export function NewNoteModal({
                             isDark ? 'text-neutral-400' : 'text-neutral-500'
                           }`}
                         >
-                          Title
+                          Safe Item Title
                         </label>
                         <button
                           id="title-notes-btn"
@@ -1241,7 +1398,7 @@ export function NewNoteModal({
                         spellCheck={false}
                         value={serviceName}
                         onChange={(e) => setServiceName(e.target.value)}
-                        placeholder="e.g. Google, GitHub, Netflix"
+                        placeholder="e.g. Identity & IDs, Google, SBI Bank"
                         className={`w-full bg-transparent text-sm font-medium focus:outline-none placeholder:text-neutral-600 ${
                           isDark ? 'text-white' : 'text-neutral-900'
                         }`}
@@ -1263,7 +1420,7 @@ export function NewNoteModal({
                                   isDark ? 'text-neutral-400' : 'text-neutral-500'
                                 }`}
                               >
-                                Notes
+                                Confidential Notes & Recovery Hints
                               </span>
                               {secretNotes && (
                                 <button
@@ -1281,7 +1438,7 @@ export function NewNoteModal({
                             <textarea
                               value={secretNotes}
                               onChange={(e) => setSecretNotes(e.target.value)}
-                              placeholder="Add notes, recovery hints, or details..."
+                              placeholder="Add recovery hints, emergency contacts, or confidential memos..."
                               rows={2}
                               autoFocus
                               className={`w-full bg-transparent text-xs focus:outline-none resize-none leading-relaxed placeholder:text-neutral-600 ${
@@ -1293,98 +1450,383 @@ export function NewNoteModal({
                       </AnimatePresence>
                     </div>
 
-                    {/* Email / Username */}
+                    {/* Segmented Section Switcher */}
                     <div
-                      className={`p-3 rounded-2xl transition-colors ${
-                        isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
+                      className={`p-1 rounded-2xl flex items-center gap-1 ${
+                        isDark ? 'bg-[#181818]' : 'bg-neutral-200/60'
                       }`}
                     >
-                      <label
-                        className={`block text-[10px] font-semibold uppercase tracking-wider mb-1 ${
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('selection');
+                          setSafeSection('ids');
+                        }}
+                        className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                          safeSection === 'ids'
+                            ? isDark
+                              ? 'bg-neutral-800 text-white shadow-xs'
+                              : 'bg-white text-neutral-900 shadow-xs'
+                            : isDark
+                            ? 'text-neutral-400 hover:text-neutral-200'
+                            : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        <Shield className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Personal IDs & Info</span>
+                        {personalInfoFields.length > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400">
+                            {personalInfoFields.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('selection');
+                          setSafeSection('credentials');
+                        }}
+                        className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                          safeSection === 'credentials'
+                            ? isDark
+                              ? 'bg-neutral-800 text-white shadow-xs'
+                              : 'bg-white text-neutral-900 shadow-xs'
+                            : isDark
+                            ? 'text-neutral-400 hover:text-neutral-200'
+                            : 'text-neutral-600 hover:text-neutral-900'
+                        }`}
+                      >
+                        <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Password & Login</span>
+                      </button>
+                    </div>
+
+                    {/* Section Content: Personal IDs & Info */}
+                    {safeSection === 'ids' && (
+                      <div className="space-y-2.5">
+                        {/* Preset Quick Add Chips */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAddPersonalInfoField('Aadhaar Card', '', true)}
+                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
+                            }`}
+                          >
+                            <CreditCard className="w-3 h-3 text-emerald-400" />
+                            <span>+ Aadhaar</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddPersonalInfoField('PAN Card', '', false)}
+                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
+                            }`}
+                          >
+                            <CreditCard className="w-3 h-3 text-blue-400" />
+                            <span>+ PAN Card</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddPersonalInfoField('Phone Number', '', false)}
+                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
+                            }`}
+                          >
+                            <Phone className="w-3 h-3 text-amber-400" />
+                            <span>+ Phone</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddPersonalInfoField('Custom ID', '', false)}
+                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
+                            }`}
+                          >
+                            <Plus className="w-3 h-3 text-neutral-400" />
+                            <span>+ Custom Field</span>
+                          </button>
+                        </div>
+
+                        {/* List of Personal Info Fields */}
+                        {personalInfoFields.length > 0 ? (
+                          <div className="space-y-2">
+                            {personalInfoFields.map((field) => {
+                              const isPan = field.label.toLowerCase().includes('pan');
+                              const isAadhaar = field.label.toLowerCase().includes('aadhaar');
+                              const isPhone =
+                                field.label.toLowerCase().includes('phone') ||
+                                field.label.toLowerCase().includes('mobile');
+
+                              return (
+                                <div
+                                  key={field.id}
+                                  className={`p-2.5 sm:p-3 rounded-2xl border transition-colors ${
+                                    isDark
+                                      ? 'bg-[#181818] border-neutral-800'
+                                      : 'bg-white border-neutral-200 shadow-xs'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <input
+                                      type="text"
+                                      value={field.label}
+                                      onChange={(e) =>
+                                        handleUpdatePersonalInfoField(field.id, {
+                                          label: e.target.value,
+                                        })
+                                      }
+                                      placeholder="Field Label (e.g. Aadhaar)"
+                                      className={`text-[11px] font-semibold uppercase tracking-wider bg-transparent focus:outline-none ${
+                                        isDark ? 'text-neutral-400' : 'text-neutral-500'
+                                      }`}
+                                    />
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          triggerHaptic('light');
+                                          handleUpdatePersonalInfoField(field.id, {
+                                            isMasked: !field.isMasked,
+                                          });
+                                        }}
+                                        className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${
+                                          field.isMasked
+                                            ? isDark
+                                              ? 'bg-neutral-800 text-emerald-400'
+                                              : 'bg-neutral-100 text-emerald-600'
+                                            : isDark
+                                            ? 'text-neutral-400 hover:text-white'
+                                            : 'text-neutral-500 hover:text-neutral-900'
+                                        }`}
+                                        title={field.isMasked ? 'Masked on card' : 'Unmasked'}
+                                      >
+                                        {field.isMasked ? (
+                                          <EyeOff className="w-3.5 h-3.5" />
+                                        ) : (
+                                          <Eye className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemovePersonalInfoField(field.id)}
+                                        className="w-6 h-6 rounded-md flex items-center justify-center text-neutral-400 hover:text-red-400 transition-colors"
+                                        title="Delete field"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <input
+                                    type={field.isMasked ? 'password' : 'text'}
+                                    value={field.value}
+                                    onChange={(e) => {
+                                      let val = e.target.value;
+                                      if (isPan) val = val.toUpperCase();
+                                      handleUpdatePersonalInfoField(field.id, { value: val });
+                                    }}
+                                    placeholder={
+                                      isAadhaar
+                                        ? '12-digit number (e.g. 5423 8812 3491)'
+                                        : isPan
+                                        ? '10-character code (e.g. BZAPA1234K)'
+                                        : isPhone
+                                        ? '+91 98765 43210'
+                                        : 'Enter value'
+                                    }
+                                    className={`w-full bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-600 ${
+                                      isDark ? 'text-white' : 'text-neutral-900'
+                                    }`}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div
+                            className={`p-3.5 rounded-2xl border text-center ${
+                              isDark
+                                ? 'bg-[#141414] border-neutral-800/80 text-neutral-400'
+                                : 'bg-white border-neutral-200 text-neutral-500'
+                            }`}
+                          >
+                            <p className="text-xs mb-1 font-medium">No personal identifiers added</p>
+                            <p className="text-[11px] text-neutral-500">
+                              Tap the chips above to securely store your Aadhaar Number, PAN Card, or Phone Number.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Section Content: Credentials (Email & Password) */}
+                    {safeSection === 'credentials' && (
+                      <div className="space-y-2.5">
+                        {/* Email / Username */}
+                        <div
+                          className={`p-3 rounded-2xl transition-colors ${
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
+                          }`}
+                        >
+                          <label
+                            className={`block text-[10px] font-semibold uppercase tracking-wider mb-1 ${
+                              isDark ? 'text-neutral-400' : 'text-neutral-500'
+                            }`}
+                          >
+                            Email or Username
+                          </label>
+                          <input
+                            type="text"
+                            name="memento_vault_username"
+                            autoComplete="off"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            value={emailUsername}
+                            onChange={(e) => setEmailUsername(e.target.value)}
+                            placeholder="user@example.com or username"
+                            className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-600 ${
+                              isDark ? 'text-white' : 'text-neutral-900'
+                            }`}
+                          />
+                        </div>
+
+                        {/* Password / Key with Show/Hide toggle */}
+                        <div
+                          className={`p-3 rounded-2xl transition-colors ${
+                            isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <label
+                              className={`text-[10px] font-semibold uppercase tracking-wider ${
+                                isDark ? 'text-neutral-400' : 'text-neutral-500'
+                              }`}
+                            >
+                              Password / Key
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const chars =
+                                  'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
+                                let pass = '';
+                                for (let i = 0; i < 14; i++) {
+                                  pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                                }
+                                setPasswordValue(pass);
+                                setShowPassword(true);
+                              }}
+                              className={`text-[11px] font-medium flex items-center gap-1 hover:underline ${
+                                isDark ? 'text-neutral-300' : 'text-neutral-700'
+                              }`}
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              <span>Generate</span>
+                            </button>
+                          </div>
+
+                          <div className="relative flex items-center">
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              name="memento_vault_password"
+                              autoComplete="new-password"
+                              autoCorrect="off"
+                              spellCheck={false}
+                              value={passwordValue}
+                              onChange={(e) => setPasswordValue(e.target.value)}
+                              placeholder="Secret key or password"
+                              className={`w-full pr-8 bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-600 ${
+                                isDark ? 'text-white' : 'text-neutral-900'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword((prev) => !prev)}
+                              className={`p-1 rounded-md transition-colors ${
+                                isDark
+                                  ? 'text-neutral-400 hover:text-white'
+                                  : 'text-neutral-500 hover:text-neutral-900'
+                              }`}
+                            >
+                              {showPassword ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quick Media Attachments Bar */}
+                    <div
+                      className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 ${
+                        isDark ? 'bg-[#141414] border-neutral-800/80' : 'bg-white border-neutral-200'
+                      }`}
+                    >
+                      <span
+                        className={`text-[11px] font-medium ${
                           isDark ? 'text-neutral-400' : 'text-neutral-500'
                         }`}
                       >
-                        Email or Username
-                      </label>
-                      <input
-                        type="text"
-                        name="memento_vault_username"
-                        autoComplete="off"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        value={emailUsername}
-                        onChange={(e) => setEmailUsername(e.target.value)}
-                        placeholder="user@example.com or username"
-                        className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-600 ${
-                          isDark ? 'text-white' : 'text-neutral-900'
-                        }`}
-                      />
-                    </div>
-
-                    {/* Password / Key with Show/Hide toggle */}
-                    <div
-                      className={`p-3 rounded-2xl transition-colors ${
-                        isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <label
-                          className={`text-[10px] font-semibold uppercase tracking-wider ${
-                            isDark ? 'text-neutral-400' : 'text-neutral-500'
-                          }`}
-                        >
-                          Password / Key
-                        </label>
+                        Safe Attachments:
+                      </span>
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
-                            const chars =
-                              'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
-                            let pass = '';
-                            for (let i = 0; i < 14; i++) {
-                              pass += chars.charAt(Math.floor(Math.random() * chars.length));
-                            }
-                            setPasswordValue(pass);
-                            setShowPassword(true);
+                            triggerHaptic('selection');
+                            docInputRef.current?.click();
                           }}
-                          className={`text-[11px] font-medium flex items-center gap-1 hover:underline ${
-                            isDark ? 'text-neutral-300' : 'text-neutral-700'
+                          className={`h-7 px-2 rounded-xl flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
+                            isDark
+                              ? 'bg-neutral-800 text-indigo-300 hover:bg-neutral-700'
+                              : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
                           }`}
                         >
-                          <Sparkles className="w-3 h-3" />
-                          <span>Generate</span>
+                          <FileText className="w-3 h-3" />
+                          <span>Doc</span>
                         </button>
-                      </div>
 
-                      <div className="relative flex items-center">
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          name="memento_vault_password"
-                          autoComplete="new-password"
-                          autoCorrect="off"
-                          spellCheck={false}
-                          value={passwordValue}
-                          onChange={(e) => setPasswordValue(e.target.value)}
-                          placeholder="Secret key or password"
-                          className={`w-full pr-8 bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-600 ${
-                            isDark ? 'text-white' : 'text-neutral-900'
-                          }`}
-                        />
                         <button
                           type="button"
-                          onClick={() => setShowPassword((prev) => !prev)}
-                          className={`p-1 rounded-md transition-colors ${
+                          onClick={() => {
+                            triggerHaptic('selection');
+                            fileInputRef.current?.click();
+                          }}
+                          className={`h-7 px-2 rounded-xl flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
                             isDark
-                              ? 'text-neutral-400 hover:text-white'
-                              : 'text-neutral-500 hover:text-neutral-900'
+                              ? 'bg-neutral-800 text-sky-300 hover:bg-neutral-700'
+                              : 'bg-sky-50 text-sky-600 hover:bg-sky-100'
                           }`}
                         >
-                          {showPassword ? (
-                            <EyeOff className="w-4 h-4" />
-                          ) : (
-                            <Eye className="w-4 h-4" />
-                          )}
+                          <ImageIcon className="w-3 h-3" />
+                          <span>Photo</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => startVoiceRecording()}
+                          className={`h-7 px-2 rounded-xl flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
+                            isDark
+                              ? 'bg-neutral-800 text-rose-300 hover:bg-neutral-700'
+                              : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                          }`}
+                        >
+                          <Mic className="w-3 h-3" />
+                          <span>Voice</span>
                         </button>
                       </div>
                     </div>
@@ -1545,8 +1987,11 @@ export function NewNoteModal({
                 )}
               </AnimatePresence>
 
-              {/* ATTACHMENT PREVIEWS (Images & Voice Notes List) */}
-              {(attachedImages.length > 0 || voiceNotes.length > 0 || isRecordingAudio) && (
+              {/* ATTACHMENT PREVIEWS (Images, Documents, Voice Notes) */}
+              {(attachedImages.length > 0 ||
+                attachedDocs.length > 0 ||
+                voiceNotes.length > 0 ||
+                isRecordingAudio) && (
                 <div className="space-y-3.5 pt-3 pb-1">
                   {/* 1. Attached Photos Gallery Preview */}
                   {attachedImages.length > 0 && (
@@ -1609,6 +2054,89 @@ export function NewNoteModal({
                             </button>
                             <div className="absolute bottom-1.5 left-2 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-[10px] font-medium text-white/90">
                               #{idx + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. Attached Documents Preview */}
+                  {attachedDocs.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-[10.5px] font-semibold uppercase tracking-wider ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-500'
+                          }`}
+                        >
+                          Attached Documents ({attachedDocs.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => docInputRef.current?.click()}
+                          className={`text-[11px] font-medium flex items-center gap-1 hover:underline ${
+                            isDark ? 'text-indigo-400' : 'text-indigo-600'
+                          }`}
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add more</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {attachedDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className={`p-2.5 rounded-2xl border flex items-center justify-between gap-3 transition-colors ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-white'
+                                : 'bg-white border-neutral-200 text-neutral-900 shadow-xs'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                  isDark
+                                    ? 'bg-indigo-950/40 text-indigo-400'
+                                    : 'bg-indigo-50 text-indigo-600'
+                                }`}
+                              >
+                                <FileText className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold truncate leading-tight">
+                                  {doc.name}
+                                </p>
+                                <p className="text-[10px] text-neutral-400 font-mono">
+                                  {doc.size || 'Document'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {doc.dataUrl && (
+                                <a
+                                  href={doc.dataUrl}
+                                  download={doc.name}
+                                  className={`p-1.5 rounded-lg transition-colors ${
+                                    isDark
+                                      ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'
+                                  }`}
+                                  title="Download document"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDoc(doc.id)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800/40 transition-colors"
+                                title="Remove document"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -1798,6 +2326,16 @@ export function NewNoteModal({
               className="hidden"
             />
 
+            {/* Hidden file input for uploading documents */}
+            <input
+              ref={docInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,application/pdf"
+              multiple
+              onChange={handleDocFilesChange}
+              className="hidden"
+            />
+
             {/* FLOATING ACTION / SUB-MENU NAV BAR */}
             <div className="pt-3 pb-1 flex flex-col items-center justify-center relative">
               {/* Speech-to-text dictation status notification pill */}
@@ -1878,6 +2416,30 @@ export function NewNoteModal({
                         <ImageIcon className="w-3.5 h-3.5" />
                       </div>
                       <span className="font-medium">Attach Photo</span>
+                    </button>
+
+                    {/* Attach Document option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPlusMenuOpen(false);
+                        triggerHaptic('selection');
+                        docInputRef.current?.click();
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-colors ${
+                        isDark
+                          ? 'hover:bg-[#242424] text-neutral-200 hover:text-white'
+                          : 'hover:bg-neutral-100 text-neutral-800'
+                      }`}
+                    >
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          isDark ? 'bg-neutral-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="font-medium">Attach Document</span>
                     </button>
 
                     {/* Insert Timestamp option */}

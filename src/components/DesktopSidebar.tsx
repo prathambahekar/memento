@@ -184,8 +184,8 @@ export function DesktopSidebar({
         isCollapsed ? 'w-18 lg:w-20' : 'w-64 lg:w-72'
       } ${
         isDark
-          ? 'bg-[#09090b] text-neutral-300 border-r border-neutral-800/60'
-          : 'bg-[#f4f4f6] text-neutral-700 border-r border-neutral-200/80'
+          ? 'bg-[#09090b] text-neutral-300'
+          : 'bg-[#f4f4f6] text-neutral-700'
       }`}
     >
       <div className="w-full flex flex-col h-full overflow-hidden">

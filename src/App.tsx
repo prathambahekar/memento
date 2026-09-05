@@ -13,7 +13,18 @@ import { TodoDrawer, parseTodoItemsFromNote } from './components/TodoDrawer';
 import { DiaryDrawer } from './components/DiaryDrawer';
 import { DataDrawer } from './components/DataDrawer';
 import { DesktopSidebar } from './components/DesktopSidebar';
-import { NavTab, ThemeMode, NoteItem, EntryType, TodoSubItem, VoiceNoteAttachment, AppPage, HomeChipFilter } from './types';
+import {
+  NavTab,
+  ThemeMode,
+  NoteItem,
+  EntryType,
+  TodoSubItem,
+  VoiceNoteAttachment,
+  DocumentAttachment,
+  PersonalInfoField,
+  AppPage,
+  HomeChipFilter,
+} from './types';
 import {
   updateNativeStatusBar,
   registerNativeBackButton,
@@ -21,6 +32,20 @@ import {
 } from './lib/capacitor';
 
 const DEFAULT_INITIAL_NOTES: NoteItem[] = [
+  {
+    id: 'safe-personal-identity',
+    title: 'Personal Identity & Documents',
+    content: 'Aadhaar: 4812 9021 3491\nPAN Card: BZAPM4910K\nPhone: +91 98765 43210\nNotes: Primary confidential government identification numbers',
+    date: 'Sep 5',
+    isSafe: true,
+    isVault: true,
+    entryType: 'passwords',
+    personalInfo: [
+      { id: 'pi-1', label: 'Aadhaar Number', value: '4812 9021 3491', isMasked: true },
+      { id: 'pi-2', label: 'PAN Card Number', value: 'BZAPM4910K', isMasked: false },
+      { id: 'pi-3', label: 'Phone Number', value: '+91 98765 43210', isMasked: false },
+    ],
+  },
   {
     id: 'safe-discord',
     title: 'Discord',
@@ -296,6 +321,8 @@ export default function App() {
       voiceNotes?: VoiceNoteAttachment[];
       imageUrl?: string;
       images?: string[];
+      documents?: DocumentAttachment[];
+      personalInfo?: PersonalInfoField[];
     }
   ) => {
     const isTodo = extra?.isTodo ?? (activeTab === 'todo');
@@ -326,6 +353,8 @@ export default function App() {
       voiceNotes: extra?.voiceNotes,
       imageUrl: extra?.imageUrl,
       images: extra?.images,
+      documents: extra?.documents,
+      personalInfo: extra?.personalInfo,
     };
     triggerHaptic('success');
     setNotes((prev) => [newNote, ...prev]);
