@@ -424,8 +424,6 @@ export default function App() {
           onOpenData={() => setIsDataDrawerOpen(true)}
           onOpenSettings={() => setCurrentPage('settings')}
           onToggleTheme={toggleTheme}
-          isReorderMode={isReorderMode}
-          onToggleReorder={() => setIsReorderMode((prev) => !prev)}
         />
 
         {/* Main Content Area */}

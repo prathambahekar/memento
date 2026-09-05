@@ -21,11 +21,13 @@ import {
   ListTodo,
   Archive,
   RotateCcw,
+  AlertCircle,
 } from 'lucide-react';
 import { ThemeMode, NoteItem, TodoSubItem } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 import { TodoDrawer, parseTodoItemsFromNote } from './TodoDrawer';
 import { TaskDrawer } from './TaskDrawer';
+import { DayDetailsDrawer } from './DayDetailsDrawer';
 
 export type TodoTab = 'inbox' | 'today' | 'upcoming';
 
@@ -128,7 +130,11 @@ export function TodoPage({
     // Default to today or tomorrow
     return formatDateToISO(new Date());
   });
+  const [calendarVisibleRows, setCalendarVisibleRows] = useState<number>(2);
   const [upcomingInputText, setUpcomingInputText] = useState('');
+
+  // Day details drawer state (for opening date details in Upcoming tab)
+  const [selectedDayDrawerDate, setSelectedDayDrawerDate] = useState<string | null>(null);
 
   // Task drawer edit state
   const [selectedTaskForDrawer, setSelectedTaskForDrawer] = useState<{
@@ -266,6 +272,81 @@ export function TodoPage({
     });
     return map;
   }, [allTasksWithList]);
+
+  // Map of dueDate -> array of tasks (for upcoming day-by-day feed)
+  const tasksByDueDateMap = useMemo(() => {
+    const map = new Map<string, typeof allTasksWithList>();
+    allTasksWithList.forEach((item) => {
+      if (item.task.dueDate) {
+        if (filterStatus === 'pending' && item.task.completed) return;
+        if (filterStatus === 'completed' && !item.task.completed) return;
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const match =
+            item.task.text.toLowerCase().includes(q) ||
+            item.listTitle.toLowerCase().includes(q);
+          if (!match) return;
+        }
+
+        const existing = map.get(item.task.dueDate) || [];
+        existing.push(item);
+        map.set(item.task.dueDate, existing);
+      }
+    });
+    return map;
+  }, [allTasksWithList, filterStatus, searchQuery]);
+
+  // Continuous list of Today and upcoming days (next 60 days)
+  const upcomingDaysList = useMemo(() => {
+    const days: Array<{
+      dateStr: string;
+      dayNum: number;
+      dayOfWeek: string;
+      dayNameShort: string;
+      monthName: string;
+      year: number;
+      isToday: boolean;
+      isTomorrow: boolean;
+      title: string;
+      subtitle: string;
+    }> = [];
+
+    const now = new Date();
+    for (let i = 0; i <= 60; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const dateStr = formatDateToISO(d);
+      const isToday = i === 0;
+      const isTomorrow = i === 1;
+      const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'long' });
+      const dayNameShort = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+      const dayNum = d.getDate();
+      const year = d.getFullYear();
+
+      let title = dayOfWeek;
+      if (isToday) {
+        title = 'Today';
+      } else if (isTomorrow) {
+        title = 'Tomorrow';
+      }
+
+      const subtitle = `${dayNameShort}, ${dayNum} ${monthName} ${year}`;
+
+      days.push({
+        dateStr,
+        dayNum,
+        dayOfWeek,
+        dayNameShort,
+        monthName,
+        year,
+        isToday,
+        isTomorrow,
+        title,
+        subtitle,
+      });
+    }
+    return days;
+  }, [todayStr]);
 
   // Filter lists in Inbox according to status & search query
   const displayedInboxLists = useMemo(() => {
@@ -446,11 +527,15 @@ export function TodoPage({
         updateNoteTasks(targetListId, [...destTasks, updatedTask]);
       }
     } else {
-      // Update in place
-      const updatedTasks = currentTasks.map((t) =>
-        t.id === taskId ? updatedTask : t
-      );
-      updateNoteTasks(listId, updatedTasks);
+      // Update in place or append if newly created
+      if (!existingTask) {
+        updateNoteTasks(listId, [...currentTasks, updatedTask]);
+      } else {
+        const updatedTasks = currentTasks.map((t) =>
+          t.id === taskId ? updatedTask : t
+        );
+        updateNoteTasks(listId, updatedTasks);
+      }
     }
   };
 
@@ -646,6 +731,173 @@ export function TodoPage({
     const now = new Date();
     setCalendarMonth(now);
     setSelectedCalendarDate(todayStr);
+  };
+
+  // Group days into 7-day rows (weeks)
+  const calendarRows = useMemo(() => {
+    const rows: typeof calendarGrid[] = [];
+    for (let i = 0; i < calendarGrid.length; i += 7) {
+      rows.push(calendarGrid.slice(i, i + 7));
+    }
+    return rows;
+  }, [calendarGrid]);
+
+  // Find row index containing selected date
+  const activeRowIndex = useMemo(() => {
+    const idx = calendarRows.findIndex((row) =>
+      row.some((day) => day.dateStr === selectedCalendarDate)
+    );
+    return idx >= 0 ? idx : 0;
+  }, [calendarRows, selectedCalendarDate]);
+
+  // Sliced rows to display based on calendarVisibleRows (collapsed to 1 or 2 rows, or full month)
+  const displayedCalendarRows = useMemo(() => {
+    if (calendarVisibleRows >= calendarRows.length) {
+      return calendarRows;
+    }
+    const count = Math.min(calendarVisibleRows, calendarRows.length);
+    let startIndex = activeRowIndex;
+    if (startIndex + count > calendarRows.length) {
+      startIndex = Math.max(0, calendarRows.length - count);
+    }
+    return calendarRows.slice(startIndex, startIndex + count);
+  }, [calendarRows, calendarVisibleRows, activeRowIndex]);
+
+  // Scroll synchronization ref and programmatic scroll flag
+  const contentScrollRef = useRef<HTMLDivElement>(null);
+  const isScrollingFromCalendarClick = useRef(false);
+
+  // Synchronize scroll position of upcoming list to calendar date and month
+  useEffect(() => {
+    if (activeTab !== 'upcoming') return;
+    const container = contentScrollRef.current;
+    if (!container) return;
+
+    let ticking = false;
+    const handleScroll = () => {
+      if (isScrollingFromCalendarClick.current) return;
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          if (isScrollingFromCalendarClick.current) {
+            ticking = false;
+            return;
+          }
+
+          const sections = container.querySelectorAll('.day-scroll-section');
+          if (sections.length === 0) {
+            ticking = false;
+            return;
+          }
+
+          const containerRect = container.getBoundingClientRect();
+          // The trigger threshold is roughly near the top of the scrolling container below the calendar
+          const threshold = containerRect.top + 45;
+
+          let targetDate: string | null = null;
+          for (let i = 0; i < sections.length; i++) {
+            const section = sections[i] as HTMLElement;
+            const rect = section.getBoundingClientRect();
+            if (rect.bottom >= threshold) {
+              targetDate = section.getAttribute('data-date');
+              break;
+            }
+          }
+
+          if (targetDate && targetDate !== selectedCalendarDate) {
+            setSelectedCalendarDate(targetDate);
+            const [y, m] = targetDate.split('-').map(Number);
+            setCalendarMonth((prev) => {
+              if (prev.getFullYear() !== y || prev.getMonth() !== m - 1) {
+                return new Date(y, m - 1, 1);
+              }
+              return prev;
+            });
+          }
+
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [activeTab, selectedCalendarDate]);
+
+  // Open drawer menu for new task with target date
+  const handleOpenNewTaskDrawerForDate = (targetDueDate: string) => {
+    triggerHaptic('light');
+    setSelectedCalendarDate(targetDueDate);
+
+    // Sync month if date is outside current month view
+    const [y, m] = targetDueDate.split('-').map(Number);
+    setCalendarMonth((prev) => {
+      if (prev.getFullYear() !== y || prev.getMonth() !== m - 1) {
+        return new Date(y, m - 1, 1);
+      }
+      return prev;
+    });
+
+    const nonTodayList = todoLists.find((l) => !l.isTodayList);
+    let targetList = nonTodayList || todoLists[0];
+
+    if (!targetList) {
+      const newNote: NoteItem = {
+        id: `todo-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        title: 'Tasks',
+        content: '',
+        date: new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        }),
+        isTodo: true,
+        entryType: 'todo',
+        todoItems: [],
+      };
+      onAddNote(newNote);
+      targetList = newNote;
+    }
+
+    const newTaskId = `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    setSelectedTaskForDrawer({
+      task: {
+        id: newTaskId,
+        text: '',
+        completed: false,
+        dueDate: targetDueDate,
+      },
+      listId: targetList.id,
+      listTitle: targetList.title || 'Tasks',
+    });
+  };
+
+  // Calendar day click handler: updates date, smoothly scrolls to that day, and opens drawer menu
+  const handleCalendarDayClick = (day: {
+    dateStr: string;
+    dayNum: number;
+    isCurrentMonth: boolean;
+    isToday: boolean;
+  }) => {
+    triggerHaptic('selection');
+    setSelectedCalendarDate(day.dateStr);
+
+    if (!day.isCurrentMonth) {
+      const [y, m] = day.dateStr.split('-').map(Number);
+      setCalendarMonth(new Date(y, m - 1, 1));
+    }
+
+    // Scroll day section into view
+    const el = document.getElementById(`day-section-${day.dateStr}`);
+    if (el && contentScrollRef.current) {
+      isScrollingFromCalendarClick.current = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => {
+        isScrollingFromCalendarClick.current = false;
+      }, 750);
+    }
+
+    // Open day details drawer to view items and fill details for this date
+    setSelectedDayDrawerDate(day.dateStr);
   };
 
   // Active tab titles & subtitles
@@ -845,8 +1097,8 @@ export function TodoPage({
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-2 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full space-y-4">
+      {/* Static Sub-header: The Three Options Bar (Inbox, Today, Upcoming) */}
+      <div className="shrink-0 px-4 sm:px-6 md:px-8 pt-1 pb-2 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full z-10">
         {/* THE THREE OPTIONS BAR: INBOX, TODAY, UPCOMING */}
         <div
           className={`grid grid-cols-3 p-1 rounded-2xl gap-1 border transition-colors ${
@@ -883,17 +1135,21 @@ export function TodoPage({
             )}
             <Inbox className="w-4 h-4 shrink-0 relative z-10 stroke-[2.2]" />
             <span className="relative z-10">Inbox</span>
-            <span
-              className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                activeTab === 'inbox'
-                  ? isDark
-                    ? 'bg-neutral-800 text-neutral-300'
-                    : 'bg-neutral-100 text-neutral-700'
-                  : 'opacity-60'
-              }`}
-            >
-              {inboxTotalCount}
-            </span>
+            {inboxTotalCount > 0 && (
+              <span
+                className={`relative z-10 text-[10.5px] font-medium px-1.5 py-0.5 min-w-[18px] text-center leading-none rounded-full ${
+                  activeTab === 'inbox'
+                    ? isDark
+                      ? 'bg-neutral-800 text-neutral-300'
+                      : 'bg-neutral-100 text-neutral-700'
+                    : isDark
+                    ? 'bg-neutral-800/60 text-neutral-400'
+                    : 'bg-neutral-200/80 text-neutral-600'
+                }`}
+              >
+                {inboxTotalCount}
+              </span>
+            )}
           </button>
 
           {/* 2. Today Option */}
@@ -924,17 +1180,21 @@ export function TodoPage({
             )}
             <CalendarDays className="w-4 h-4 shrink-0 relative z-10 stroke-[2.2]" />
             <span className="relative z-10">Today</span>
-            <span
-              className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                activeTab === 'today'
-                  ? isDark
-                    ? 'bg-neutral-800 text-neutral-300'
-                    : 'bg-neutral-100 text-neutral-700'
-                  : 'opacity-60'
-              }`}
-            >
-              {todayActiveCount}
-            </span>
+            {todayActiveCount > 0 && (
+              <span
+                className={`relative z-10 text-[10.5px] font-medium px-1.5 py-0.5 min-w-[18px] text-center leading-none rounded-full ${
+                  activeTab === 'today'
+                    ? isDark
+                      ? 'bg-neutral-800 text-neutral-300'
+                      : 'bg-neutral-100 text-neutral-700'
+                    : isDark
+                    ? 'bg-neutral-800/60 text-neutral-400'
+                    : 'bg-neutral-200/80 text-neutral-600'
+                }`}
+              >
+                {todayActiveCount}
+              </span>
+            )}
           </button>
 
           {/* 3. Upcoming Option */}
@@ -965,19 +1225,28 @@ export function TodoPage({
             )}
             <Calendar className="w-4 h-4 shrink-0 relative z-10 stroke-[2.2]" />
             <span className="relative z-10">Upcoming</span>
-            <span
-              className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                activeTab === 'upcoming'
-                  ? isDark
-                    ? 'bg-neutral-800 text-neutral-300'
-                    : 'bg-neutral-100 text-neutral-700'
-                  : 'opacity-60'
-              }`}
-            >
-              {upcomingActiveCount}
-            </span>
+            {upcomingActiveCount > 0 && (
+              <span
+                className={`relative z-10 text-[10.5px] font-medium px-1.5 py-0.5 min-w-[18px] text-center leading-none rounded-full ${
+                  activeTab === 'upcoming'
+                    ? isDark
+                      ? 'bg-neutral-800 text-neutral-300'
+                      : 'bg-neutral-100 text-neutral-700'
+                    : isDark
+                    ? 'bg-neutral-800/60 text-neutral-400'
+                    : 'bg-neutral-200/80 text-neutral-600'
+                }`}
+              >
+                {upcomingActiveCount}
+              </span>
+            )}
           </button>
         </div>
+      </div>
+
+      {activeTab !== 'upcoming' ? (
+        /* INBOX & TODAY MAIN SCROLLABLE CONTENT */
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-2 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full space-y-4">
 
         {/* TAB CONTENT: INBOX */}
         {activeTab === 'inbox' && (
@@ -1394,22 +1663,17 @@ export function TodoPage({
             </div>
           </div>
         )}
-
-        {/* TAB CONTENT: UPCOMING WITH CALENDAR VIEW */}
-        {activeTab === 'upcoming' && (
-          <div className="space-y-4">
-            {/* CALENDAR CARD */}
-            <div
-              className={`p-4 rounded-3xl border shadow-xs transition-colors ${
-                isDark
-                  ? 'bg-[#121214] border-neutral-800/90'
-                  : 'bg-white border-neutral-200/90'
-              }`}
-            >
+        </div>
+      ) : (
+        /* TAB CONTENT: UPCOMING WITH STATIC CALENDAR & SEPARATE SCROLLING FEED */
+        <div className="flex-1 flex flex-col min-h-0 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-1 overflow-hidden">
+          {/* STATIC CALENDAR - BLENDED WITH BACKGROUND, MINIMAL & CLEAN */}
+          <div className="shrink-0 pt-1 pb-2">
+            <div className="w-full">
               {/* Calendar Month & Navigation Header */}
-              <div className="flex items-center justify-between mb-3 px-1">
+              <div className="flex items-center justify-between mb-2.5 px-0.5">
                 <div>
-                  <h2 className="text-base font-bold tracking-tight">
+                  <h2 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-neutral-900'}`}>
                     {calendarMonth.toLocaleDateString('en-US', {
                       month: 'long',
                       year: 'numeric',
@@ -1423,7 +1687,7 @@ export function TodoPage({
                     onClick={handleJumpToToday}
                     className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors ${
                       isDark
-                        ? 'bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300'
+                        ? 'bg-[#1e1e1e] hover:bg-[#282828] text-neutral-300'
                         : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
                     }`}
                   >
@@ -1436,7 +1700,7 @@ export function TodoPage({
                     aria-label="Previous month"
                     className={`p-1.5 rounded-full transition-colors ${
                       isDark
-                        ? 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
+                        ? 'hover:bg-[#1e1e1e] text-neutral-400 hover:text-white'
                         : 'hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
@@ -1449,7 +1713,7 @@ export function TodoPage({
                     aria-label="Next month"
                     className={`p-1.5 rounded-full transition-colors ${
                       isDark
-                        ? 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
+                        ? 'hover:bg-[#1e1e1e] text-neutral-400 hover:text-white'
                         : 'hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900'
                     }`}
                   >
@@ -1459,11 +1723,11 @@ export function TodoPage({
               </div>
 
               {/* Days of Week Row */}
-              <div className="grid grid-cols-7 gap-1 text-center mb-1">
+              <div className="grid grid-cols-7 gap-1 text-center mb-1.5">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
                   <div
                     key={`weekday-${idx}`}
-                    className={`text-[11px] font-semibold py-1 uppercase ${
+                    className={`text-[11px] font-semibold py-0.5 uppercase tracking-wider ${
                       isDark ? 'text-neutral-500' : 'text-neutral-400'
                     }`}
                   >
@@ -1472,266 +1736,285 @@ export function TodoPage({
                 ))}
               </div>
 
-              {/* Calendar Days Grid */}
-              <div className="grid grid-cols-7 gap-1 text-center">
-                {calendarGrid.map((day) => {
+              {/* Calendar Days Grid (Shows 2 rows by default, expandable up to full month) */}
+              <div className="grid grid-cols-7 gap-1 text-center transition-all duration-300">
+                {displayedCalendarRows.flat().map((day) => {
                   const isSelected = selectedCalendarDate === day.dateStr;
-                  const taskMeta = datesWithTasksMap.get(day.dateStr);
-                  const hasTasks = !!taskMeta && taskMeta.total > 0;
-                  const hasPending = !!taskMeta && taskMeta.pending > 0;
 
                   return (
                     <button
                       key={`cal-day-${day.dateStr}`}
                       type="button"
-                      onClick={() => {
-                        triggerHaptic('selection');
-                        setSelectedCalendarDate(day.dateStr);
-                      }}
-                      className={`relative h-10 rounded-2xl flex flex-col items-center justify-center transition-all ${
+                      onClick={() => handleCalendarDayClick(day)}
+                      title={`Select ${day.dateStr} & open entry drawer`}
+                      className={`relative w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer ${
                         isSelected
                           ? isDark
-                            ? 'bg-white text-black font-bold shadow-md scale-105'
-                            : 'bg-neutral-900 text-white font-bold shadow-md scale-105'
+                            ? 'bg-white text-black font-bold shadow-sm'
+                            : 'bg-neutral-900 text-white font-bold shadow-sm'
                           : day.isToday
                           ? isDark
-                            ? 'border border-emerald-500/60 text-emerald-400 font-semibold'
-                            : 'border border-emerald-600/60 text-emerald-700 font-semibold'
+                            ? 'text-emerald-400 font-bold bg-emerald-500/15 ring-1 ring-emerald-500/40'
+                            : 'text-emerald-600 font-bold bg-emerald-50 ring-1 ring-emerald-500/40'
                           : day.isCurrentMonth
                           ? isDark
-                            ? 'text-neutral-200 hover:bg-neutral-800/60'
+                            ? 'text-neutral-200 hover:bg-[#1c1c1f]'
                             : 'text-neutral-800 hover:bg-neutral-100'
                           : isDark
-                          ? 'text-neutral-600 hover:bg-neutral-800/40'
+                          ? 'text-neutral-600 hover:bg-[#18181b]'
                           : 'text-neutral-300 hover:bg-neutral-50'
                       }`}
                     >
-                      <span className="text-xs leading-none">{day.dayNum}</span>
-
-                      {/* Task dot indicators */}
-                      {hasTasks && (
-                        <span
-                          className={`w-1 h-1 rounded-full mt-0.5 ${
-                            isSelected
-                              ? isDark
-                                ? 'bg-black'
-                                : 'bg-white'
-                              : hasPending
-                              ? 'bg-emerald-500'
-                              : 'bg-neutral-400'
-                          }`}
-                        />
-                      )}
+                      <span className="text-xs sm:text-[13px] leading-none">{day.dayNum}</span>
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* SELECTED DATE VIEW & ADD TASK */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold tracking-tight">
-                    {formatFriendlyDate(selectedCalendarDate, todayStr)}
-                  </h3>
-                  <span
-                    className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${
-                      isDark
-                        ? 'bg-neutral-800 text-neutral-300'
-                        : 'bg-neutral-100 text-neutral-600'
-                    }`}
-                  >
-                    {selectedDateTasks.length} task
-                    {selectedDateTasks.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-
-                <span
-                  className={`text-xs ${
-                    isDark ? 'text-neutral-500' : 'text-neutral-400'
-                  }`}
-                >
-                  {selectedCalendarDate}
-                </span>
-              </div>
-
-              {/* Quick inline add for selected date */}
-              <div
-                className={`flex items-center px-3.5 py-2 rounded-2xl border transition-all ${
-                  isDark
-                    ? 'bg-[#141416] border-neutral-800/90 focus-within:border-neutral-600'
-                    : 'bg-white border-neutral-200/90 focus-within:border-neutral-400'
-                }`}
-              >
-                <Plus className="w-4 h-4 text-emerald-500 shrink-0 mr-2.5 stroke-[2.2]" />
-                <input
-                  type="text"
-                  value={upcomingInputText}
-                  onChange={(e) => setUpcomingInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (upcomingInputText.trim()) {
-                        addTaskWithDueDate(upcomingInputText, selectedCalendarDate);
-                        setUpcomingInputText('');
-                      }
-                    }
-                  }}
-                  placeholder={`Add task for ${formatFriendlyDate(
-                    selectedCalendarDate,
-                    todayStr
-                  )}...`}
-                  className={`flex-1 bg-transparent text-xs sm:text-sm outline-none ${
-                    isDark ? 'text-white' : 'text-neutral-900'
-                  }`}
-                />
+              {/* SIMPLE EXPAND AND COLLAPSE BUTTON (NO SPLIT LINE) */}
+              <div className="flex justify-center pt-1.5 pb-2">
                 <button
                   type="button"
-                  disabled={!upcomingInputText.trim()}
                   onClick={() => {
-                    if (upcomingInputText.trim()) {
-                      addTaskWithDueDate(upcomingInputText, selectedCalendarDate);
-                      setUpcomingInputText('');
-                    }
+                    triggerHaptic('light');
+                    setCalendarVisibleRows((prev) =>
+                      prev >= calendarRows.length ? 2 : calendarRows.length
+                    );
                   }}
-                  className="text-xs px-2.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium transition-all cursor-pointer ${
+                    isDark
+                      ? 'text-neutral-400 hover:text-white hover:bg-[#1c1c1f]'
+                      : 'text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100'
+                  }`}
+                  title={
+                    calendarVisibleRows >= calendarRows.length
+                      ? 'Collapse calendar'
+                      : 'Expand calendar'
+                  }
                 >
-                  Add
+                  <span>
+                    {calendarVisibleRows >= calendarRows.length
+                      ? 'Collapse'
+                      : 'Expand'}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      calendarVisibleRows >= calendarRows.length
+                        ? 'rotate-180'
+                        : ''
+                    }`}
+                  />
                 </button>
               </div>
-
-              {/* Tasks for selected date */}
-              <div className="space-y-2">
-                <AnimatePresence initial={false}>
-                  {displayedSelectedDateTasks.map((item) => (
-                    <TaskItemRow
-                      key={`seldate-task-${item.listId}-${item.task.id}`}
-                      item={item}
-                      isDark={isDark}
-                      todayStr={todayStr}
-                      onOpenDrawer={handleOpenTaskDrawer}
-                      onToggle={handleToggleTask}
-                      onDelete={handleDeleteTask}
-                      onOpenSchedule={() => setSchedulingTask(item)}
-                      showListBadge
-                    />
-                  ))}
-                </AnimatePresence>
-
-                {displayedSelectedDateTasks.length === 0 && (
-                  <p
-                    className={`text-xs text-center py-5 italic ${
-                      isDark ? 'text-neutral-500' : 'text-neutral-400'
-                    }`}
-                  >
-                    No tasks scheduled for this date.
-                  </p>
-                )}
-              </div>
             </div>
+          </div>
 
-            {/* UPCOMING HORIZON (Chronological overview of scheduled tasks) */}
-            {upcomingTasks.length > 0 && (
-              <div className="pt-3 border-t border-neutral-200/50 dark:border-neutral-800/50 space-y-2.5">
-                <div className="flex items-center justify-between px-1">
-                  <span
-                    className={`text-xs font-semibold uppercase tracking-wider ${
-                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+          {/* SCROLLING DAYS LIST - STRICTLY POSITIONED BELOW THE STATIC CALENDAR, NEVER OVERLAPPING */}
+          <div
+            ref={contentScrollRef}
+            className="flex-1 overflow-y-auto min-h-0 space-y-3 pb-24 md:pb-8 pr-0.5"
+          >
+            {upcomingDaysList.map((day) => {
+              const dayTasks = tasksByDueDateMap.get(day.dateStr) || [];
+              const isSelected = selectedCalendarDate === day.dateStr;
+              const overdueForToday = day.isToday ? displayedOverdueTasks : [];
+              const totalDayTasks = dayTasks.length + overdueForToday.length;
+
+                const [y, m, d] = day.dateStr.split('-').map(Number);
+                const dateObj = new Date(y, m - 1, d);
+                const dayOfWeekShort = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                const dayNum = dateObj.getDate();
+
+                return (
+                  <div
+                    key={`day-section-${day.dateStr}`}
+                    id={`day-section-${day.dateStr}`}
+                    data-date={day.dateStr}
+                    onClick={() => {
+                      triggerHaptic('selection');
+                      setSelectedCalendarDate(day.dateStr);
+                      setSelectedDayDrawerDate(day.dateStr);
+                    }}
+                    className={`day-scroll-section group cursor-pointer scroll-mt-2 rounded-2xl p-3 sm:p-3.5 border transition-all duration-200 active:scale-[0.99] flex items-center justify-between gap-3 ${
+                      isSelected
+                        ? isDark
+                          ? 'bg-[#18181b] border-neutral-700 shadow-md ring-1 ring-neutral-700/60'
+                          : 'bg-white border-neutral-300 shadow-md ring-1 ring-neutral-200'
+                        : isDark
+                        ? 'bg-[#141416] hover:bg-[#19191d] border-neutral-800/80 hover:border-neutral-700/80 shadow-2xs'
+                        : 'bg-white hover:bg-neutral-50/80 border-neutral-200/80 hover:border-neutral-300 shadow-2xs'
                     }`}
                   >
-                    Upcoming Schedule
-                  </span>
-                  <span
-                    className={`text-xs font-mono ${
-                      isDark ? 'text-neutral-500' : 'text-neutral-400'
-                    }`}
-                  >
-                    {upcomingTasks.length} upcoming
-                  </span>
-                </div>
+                    {/* Left: Minimal Date Badge & Day Title */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Compact calendar badge with default app border */}
+                      <div
+                        className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center shrink-0 border transition-colors ${
+                          day.isToday
+                            ? isDark
+                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 font-bold'
+                              : 'bg-emerald-50 border-emerald-500/30 text-emerald-600 font-bold'
+                            : isDark
+                            ? 'bg-[#1a1a1e] border-neutral-800/80 text-neutral-300 group-hover:border-neutral-700'
+                            : 'bg-neutral-100 border-neutral-200/80 text-neutral-700 group-hover:border-neutral-300'
+                        }`}
+                      >
+                        <span className="text-[10px] font-bold uppercase tracking-wider leading-none text-neutral-400">
+                          {dayOfWeekShort}
+                        </span>
+                        <span className="text-sm font-semibold leading-tight mt-0.5">
+                          {dayNum}
+                        </span>
+                      </div>
 
-                <div className="space-y-2">
-                  {upcomingTasks.map((item) => (
-                    <TaskItemRow
-                      key={`upcoming-all-${item.listId}-${item.task.id}`}
-                      item={item}
-                      isDark={isDark}
-                      todayStr={todayStr}
-                      onOpenDrawer={handleOpenTaskDrawer}
-                      onToggle={handleToggleTask}
-                      onDelete={handleDeleteTask}
-                      onOpenSchedule={() => setSchedulingTask(item)}
-                      showDateBadge
-                      showListBadge
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+                      {/* Day text & subtitle */}
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {day.isToday && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          )}
+                          <h3
+                            className={`text-sm font-semibold truncate ${
+                              day.isToday
+                                ? isDark
+                                  ? 'text-emerald-400'
+                                  : 'text-emerald-600'
+                                : isDark
+                                ? 'text-white'
+                                : 'text-neutral-900'
+                            }`}
+                          >
+                            {day.title}
+                          </h3>
+                        </div>
+                        <p
+                          className={`text-[11px] truncate mt-0.5 ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-500'
+                          }`}
+                        >
+                          {day.subtitle}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Middle / Right: Meaningful status pills & Action */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Overdue alert indicator (for Today if overdue exists) */}
+                      {day.isToday && overdueForToday.length > 0 && (
+                        <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/25 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          <span>{overdueForToday.length} overdue</span>
+                        </span>
+                      )}
+
+                      {/* Task Count Badge - only displayed when tasks exist to avoid visual clutter */}
+                      {totalDayTasks > 0 && (
+                        <span
+                          className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full border transition-colors ${
+                            isDark
+                              ? 'bg-[#1a1a1e] border-neutral-800/80 text-neutral-300'
+                              : 'bg-neutral-100 border-neutral-200/80 text-neutral-700'
+                          }`}
+                        >
+                          {totalDayTasks} {totalDayTasks === 1 ? 'task' : 'tasks'}
+                        </span>
+                      )}
+
+                      {/* Compact "+ Add" Pill button with default app border */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic('light');
+                          setSelectedCalendarDate(day.dateStr);
+                          setSelectedDayDrawerDate(day.dateStr);
+                        }}
+                        className={`h-7 px-2.5 sm:px-3 rounded-full flex items-center gap-1 text-xs font-medium transition-all active:scale-95 cursor-pointer border ${
+                          isDark
+                            ? 'bg-[#1a1a1e] hover:bg-[#222228] border-neutral-800/80 hover:border-neutral-700 text-neutral-300 hover:text-white'
+                            : 'bg-neutral-100 hover:bg-neutral-200/80 border-neutral-200/80 hover:border-neutral-300 text-neutral-700'
+                        }`}
+                        title={`Open details for ${day.title}`}
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[2.2]" />
+                        <span>Add</span>
+                      </button>
+
+                      {/* Chevron indicator */}
+                      <ChevronRight
+                        className={`w-4 h-4 transition-transform group-hover:translate-x-0.5 ${
+                          isDark
+                            ? 'text-neutral-500 group-hover:text-neutral-300'
+                            : 'text-neutral-400 group-hover:text-neutral-600'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
-      </div>
 
-      {/* ADD TASK INPUT BAR AT THE BOTTOM */}
-      <div className="shrink-0 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-20 md:pb-6 pt-2">
-        <div
-          className={`rounded-full transition-all duration-200 border ${
-            isInputFocused
-              ? isDark
-                ? 'bg-[#18181c] border-neutral-700 shadow-lg'
-                : 'bg-white border-neutral-300 shadow-md'
-              : isDark
-              ? 'bg-[#141416] border-neutral-800/80 shadow-xs'
-              : 'bg-white border-neutral-200/80 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center px-4 py-2.5 sm:py-3 gap-3">
-            <button
-              type="button"
-              onClick={handleBottomAdd}
-              disabled={!inputText.trim()}
-              aria-label="Add task"
-              className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
-                inputText.trim()
-                  ? isDark
-                    ? 'bg-white text-black active:scale-95 shadow-xs'
-                    : 'bg-neutral-900 text-white active:scale-95 shadow-xs'
-                  : isDark
-                  ? 'bg-neutral-800 text-neutral-500 cursor-default'
-                  : 'bg-neutral-100 text-neutral-400 cursor-default'
-              }`}
-            >
-              <Plus className="w-4 h-4 stroke-[2.2]" />
-            </button>
+      {/* ADD TASK INPUT BAR AT THE BOTTOM (Hidden in Upcoming view to maximize scrolling space) */}
+      {activeTab !== 'upcoming' && (
+        <div className="shrink-0 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-20 md:pb-6 pt-2">
+          <div
+            className={`rounded-full transition-all duration-200 border ${
+              isInputFocused
+                ? isDark
+                  ? 'bg-[#18181c] border-neutral-700 shadow-lg'
+                  : 'bg-white border-neutral-300 shadow-md'
+                : isDark
+                ? 'bg-[#141416] border-neutral-800/80 shadow-xs'
+                : 'bg-white border-neutral-200/80 shadow-xs'
+            }`}
+          >
+            <div className="flex items-center px-4 py-2.5 sm:py-3 gap-3">
+              <button
+                type="button"
+                onClick={handleBottomAdd}
+                disabled={!inputText.trim()}
+                aria-label="Add task"
+                className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
+                  inputText.trim()
+                    ? isDark
+                      ? 'bg-white text-black active:scale-95 shadow-xs'
+                      : 'bg-neutral-900 text-white active:scale-95 shadow-xs'
+                    : isDark
+                    ? 'bg-neutral-800 text-neutral-500 cursor-default'
+                    : 'bg-neutral-100 text-neutral-400 cursor-default'
+                }`}
+              >
+                <Plus className="w-4 h-4 stroke-[2.2]" />
+              </button>
 
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onFocus={() => setIsInputFocused(true)}
-              onBlur={() => setIsInputFocused(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleBottomAdd();
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleBottomAdd();
+                  }
+                }}
+                placeholder={
+                  activeTab === 'inbox'
+                    ? 'Create a new list...'
+                    : 'Add a task for Today...'
                 }
-              }}
-              placeholder={
-                activeTab === 'inbox'
-                  ? 'Create a new list...'
-                  : activeTab === 'today'
-                  ? 'Add a task for Today...'
-                  : `Add a task for ${formatFriendlyDate(selectedCalendarDate, todayStr)}...`
-              }
-              className={`flex-1 bg-transparent text-sm md:text-[14.5px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-500 ${
-                isDark ? 'text-white' : 'text-neutral-900'
-              }`}
-            />
+                className={`flex-1 bg-transparent text-sm md:text-[14.5px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-500 ${
+                  isDark ? 'text-white' : 'text-neutral-900'
+                }`}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* QUICK RESCHEDULE / SCHEDULE MODAL */}
       <AnimatePresence>
@@ -1891,6 +2174,34 @@ export function TodoPage({
         onDelete={(listId, taskId) => {
           handleDeleteTask(listId, taskId);
           setSelectedTaskForDrawer(null);
+        }}
+      />
+
+      {/* Day Details Drawer Menu (shows items and allows adding tasks for clicked date) */}
+      <DayDetailsDrawer
+        isOpen={!!selectedDayDrawerDate}
+        dateStr={selectedDayDrawerDate}
+        todayStr={todayStr}
+        theme={theme}
+        tasks={
+          selectedDayDrawerDate
+            ? tasksByDueDateMap.get(selectedDayDrawerDate) || []
+            : []
+        }
+        overdueTasks={
+          selectedDayDrawerDate === todayStr ? displayedOverdueTasks : []
+        }
+        onClose={() => setSelectedDayDrawerDate(null)}
+        onToggleTask={handleToggleTask}
+        onDeleteTask={handleDeleteTask}
+        onAddTask={(text, targetDate) => {
+          addTaskWithDueDate(text, targetDate);
+        }}
+        onOpenTaskEdit={(item) => {
+          setSelectedTaskForDrawer(item);
+        }}
+        onOpenSchedule={(item) => {
+          setSchedulingTask(item);
         }}
       />
 

@@ -8,6 +8,7 @@ import {
   Trash2,
   ListTodo,
   ChevronDown,
+  X,
 } from 'lucide-react';
 import { TodoSubItem, NoteItem } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
@@ -272,13 +273,15 @@ export const TaskDrawer: React.FC<TaskDrawerProps> = ({
 
               {/* Right controls: Delete (icon only) and Save button */}
               <div className="flex items-center gap-2 relative">
-                {/* Delete Button as Icon Only right next to Save button */}
+                {/* Delete / Cancel Button as Icon Only right next to Save button */}
                 <button
                   id="task-drawer-delete-btn"
                   type="button"
                   onClick={() => {
                     triggerHaptic('medium');
-                    onDelete(item.listId, item.task.id);
+                    if (item.task.text) {
+                      onDelete(item.listId, item.task.id);
+                    }
                     onClose();
                   }}
                   className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
@@ -286,13 +289,13 @@ export const TaskDrawer: React.FC<TaskDrawerProps> = ({
                       ? 'bg-[#1e1e1e] hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400'
                       : 'bg-neutral-100 hover:bg-rose-50 text-neutral-600 hover:text-rose-600'
                   }`}
-                  aria-label="Delete task"
-                  title="Delete task"
+                  aria-label={item.task.text ? 'Delete task' : 'Cancel'}
+                  title={item.task.text ? 'Delete task' : 'Cancel'}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  {item.task.text ? <Trash2 className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
                 </button>
 
-                {/* Save Button: High-contrast modern pill matching default UI */}
+                {/* Save / Add Button: High-contrast modern pill matching default UI */}
                 <button
                   id="task-drawer-save-btn"
                   type="button"
@@ -304,7 +307,7 @@ export const TaskDrawer: React.FC<TaskDrawerProps> = ({
                   }`}
                 >
                   <Check className="w-3.5 h-3.5 stroke-[2.4]" />
-                  <span>Save</span>
+                  <span>{item.task.text ? 'Save' : 'Add'}</span>
                 </button>
               </div>
             </div>

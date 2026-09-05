@@ -7,8 +7,6 @@ import {
   Archive,
   Settings,
   Plus,
-  ArrowUpDown,
-  Check,
   Moon,
   Sun,
   PanelLeft,
@@ -30,8 +28,6 @@ interface DesktopSidebarProps {
   onOpenData?: () => void;
   onOpenSettings: () => void;
   onToggleTheme: () => void;
-  isReorderMode?: boolean;
-  onToggleReorder?: () => void;
 }
 
 export function DesktopSidebar({
@@ -46,8 +42,6 @@ export function DesktopSidebar({
   onOpenNewNote,
   onOpenSettings,
   onToggleTheme,
-  isReorderMode = false,
-  onToggleReorder,
 }: DesktopSidebarProps) {
   const isDark = theme === 'dark';
 
@@ -106,13 +100,6 @@ export function DesktopSidebar({
       icon: Archive,
       isActive: currentPage === 'main' && activeTab === 'archive',
       onClick: () => onSelectTab('archive'),
-    },
-    {
-      id: 'reorder',
-      label: isReorderMode ? 'Done Reordering' : 'Reorder Notes',
-      icon: isReorderMode ? Check : ArrowUpDown,
-      isActive: isReorderMode,
-      onClick: () => onToggleReorder?.(),
     },
     {
       id: 'settings',
