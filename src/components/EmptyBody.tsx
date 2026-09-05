@@ -13,11 +13,12 @@ import {
   Archive,
   Check,
   Image as ImageIcon,
+  GripVertical,
 } from 'lucide-react';
 import { NavTab, ThemeMode, NoteItem, TodoSubItem } from '../types';
 import { parseTodoItemsFromNote } from './TodoDrawer';
 import { CardContextMenu } from './CardContextMenu';
-import { triggerHaptic } from '../lib/capacitor';
+import { triggerHaptic, isNativePlatform } from '../lib/capacitor';
 import { capitalizeFirstChar } from '../lib/formatters';
 
 function createSampleAudioBlob(): Blob {
@@ -94,6 +95,7 @@ interface EmptyBodyProps {
   theme: ThemeMode;
   notes: NoteItem[];
   searchQuery: string;
+  isReorderMode?: boolean;
   onOpenNewNote: () => void;
   onSelectNote?: (note: NoteItem) => void;
   onToggleTodoItem?: (noteId: string, itemId: string) => void;
@@ -237,14 +239,18 @@ interface NoteCardProps {
   onToggleTodoItem?: (noteId: string, itemId: string) => void;
   onOpenContextMenu: (note: NoteItem, x: number, y: number) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
+  isReorderMode?: boolean;
   isDragging?: boolean;
   isDragOver?: boolean;
+  suppressCardClickUntil?: number;
   onDragStartCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
   onDragOverCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
   onDragLeaveCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
   onDropCard?: (e: React.DragEvent<HTMLDivElement>, noteId: string) => void;
   onDragEndCard?: (e: React.DragEvent<HTMLDivElement>) => void;
   onTouchStartCard?: (e: React.TouchEvent<HTMLDivElement>, noteId: string) => void;
+  onTouchMoveCard?: (e: React.TouchEvent<HTMLDivElement>) => void;
+  onTouchEndCard?: () => void;
 }
 
 function NoteCard({
@@ -254,14 +260,18 @@ function NoteCard({
   onToggleTodoItem,
   onOpenContextMenu,
   onUpdateNote,
+  isReorderMode = false,
   isDragging,
   isDragOver,
+  suppressCardClickUntil = 0,
   onDragStartCard,
   onDragOverCard,
   onDragLeaveCard,
   onDropCard,
   onDragEndCard,
   onTouchStartCard,
+  onTouchMoveCard,
+  onTouchEndCard,
 }: NoteCardProps) {
   const isDark = theme === 'dark';
   const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
@@ -327,57 +337,43 @@ function NoteCard({
     }
   };
 
-  const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
-  const suppressClickRef = useRef(false);
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
-  const handleTouchStart = (e: TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-    suppressClickRef.current = false;
+  const lastTouchTimeRef = useRef<number>(0);
 
-    if (touchTimerRef.current) clearTimeout(touchTimerRef.current);
-    touchTimerRef.current = setTimeout(() => {
-      suppressClickRef.current = true;
-      triggerHaptic('medium');
-      onOpenContextMenu(note, touch.clientX, touch.clientY);
-    }, 450);
-  };
-
-  const handleTouchMove = (e: TouchEvent) => {
-    if (!touchStartPos.current || !touchTimerRef.current) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - touchStartPos.current.x;
-    const dy = touch.clientY - touchStartPos.current.y;
-    // Cancel long press if finger moved (scrolling)
-    if (Math.hypot(dx, dy) > 10) {
-      clearTimeout(touchTimerRef.current);
-      touchTimerRef.current = null;
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (touchTimerRef.current) {
-      clearTimeout(touchTimerRef.current);
-      touchTimerRef.current = null;
-    }
-    // Briefly keep suppressClick true to swallow synthetic click event after long press
-    if (suppressClickRef.current) {
-      setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 350);
-    }
+  const isMobileOrTouchEnvironment = () => {
+    if (isNativePlatform()) return true;
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(pointer: coarse)').matches ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    );
   };
 
   const handleCardClick = () => {
-    if (suppressClickRef.current) return;
+    if (isReorderMode) return;
+    if (Date.now() < suppressCardClickUntil) return;
+    if (isDragging) return;
     onSelectNote?.(note);
   };
 
-  const handleContextMenu = (e: MouseEvent) => {
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // On mobile or touch interactions, holding a card must NOT open the context menu.
+    // It is reserved for hold-to-reorder, while context menu is strictly for desktop mouse right-click.
+    const isTouchSource =
+      Date.now() - lastTouchTimeRef.current < 1500 ||
+      (e.nativeEvent as any)?.pointerType === 'touch' ||
+      (e.nativeEvent as any)?.sourceCapabilities?.firesTouchEvents === true;
+
+    if (isMobileOrTouchEnvironment() || isTouchSource) {
+      return;
+    }
+
     onOpenContextMenu(note, e.clientX, e.clientY);
   };
 
@@ -405,7 +401,8 @@ function NoteCard({
   return (
     <motion.div
       data-note-id={note.id}
-      draggable
+      draggable={!isTouchDevice}
+      style={{ WebkitTouchCallout: 'none' }}
       onDragStart={(e) => onDragStartCard?.(e as any, note.id)}
       onDragOver={(e) => onDragOverCard?.(e as any, note.id)}
       onDragLeave={(e) => onDragLeaveCard?.(e as any, note.id)}
@@ -416,17 +413,19 @@ function NoteCard({
       onClick={handleCardClick}
       onContextMenu={handleContextMenu}
       onTouchStart={(e) => {
-        onTouchStartCard?.(e as any, note.id);
-        handleTouchStart(e);
+        lastTouchTimeRef.current = Date.now();
+        onTouchStartCard?.(e, note.id);
       }}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchEnd}
-      className={`group relative w-full p-3.5 sm:p-4 rounded-2xl transition-all cursor-grab active:cursor-grabbing shadow-xs border select-none ${
+      onTouchMove={onTouchMoveCard}
+      onTouchEnd={onTouchEndCard}
+      onTouchCancel={onTouchEndCard}
+      className={`group relative w-full p-3.5 sm:p-4 rounded-2xl transition-all ${
+        isTouchDevice ? '' : 'cursor-grab active:cursor-grabbing'
+      } shadow-xs border select-none ${
         isDragging
-          ? 'opacity-30 scale-[0.97] ring-2 ring-emerald-500/60 border-dashed border-emerald-500 bg-emerald-500/5 z-0'
+          ? 'scale-[1.03] ring-2 ring-emerald-500 border-emerald-500 shadow-2xl z-30 opacity-95 bg-emerald-500/10'
           : isDragOver
-          ? 'ring-2 ring-emerald-500 border-emerald-500 scale-[1.02] shadow-xl z-20'
+          ? 'ring-2 ring-emerald-400 border-emerald-400 scale-[0.98] shadow-lg z-20'
           : isDark
           ? 'bg-[#141416] text-neutral-100 hover:bg-[#18181b] border-neutral-800/80 hover:border-neutral-700/80 hover:shadow-md'
           : 'bg-white text-neutral-900 hover:bg-[#fafafc] border-neutral-200/80 hover:border-neutral-300 hover:shadow-md'
@@ -446,66 +445,78 @@ function NoteCard({
           {capitalizeFirstChar(note.title)}
         </h3>
 
-        {/* Category / Security Badge */}
-        {isPassKey && (
-          <span
-            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
-              isDark
-                ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
-                : 'bg-amber-100 text-amber-800 border border-amber-200/80'
-            }`}
-            title="Key"
-          >
-            <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-300 shrink-0" />
-            <span className="hidden md:inline">Key</span>
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Category / Security Badge */}
+          {isPassKey && (
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+                isDark
+                  ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
+                  : 'bg-amber-100 text-amber-800 border border-amber-200/80'
+              }`}
+              title="Key"
+            >
+              <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-300 shrink-0" />
+              <span className="hidden md:inline">Key</span>
+            </span>
+          )}
 
-        {isDiary && (
-          <span
-            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
-              isDark
-                ? 'bg-purple-500/10 text-purple-200 border border-purple-500/20'
-                : 'bg-purple-100 text-purple-800 border border-purple-200/80'
-            }`}
-            title="Diary"
-          >
-            <BookOpen className="w-3 h-3 md:w-2.5 md:h-2.5 text-purple-500 dark:text-purple-300 shrink-0" />
-            <span className="hidden md:inline">Diary</span>
-          </span>
-        )}
+          {isDiary && (
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+                isDark
+                  ? 'bg-purple-500/10 text-purple-200 border border-purple-500/20'
+                  : 'bg-purple-100 text-purple-800 border border-purple-200/80'
+              }`}
+              title="Diary"
+            >
+              <BookOpen className="w-3 h-3 md:w-2.5 md:h-2.5 text-purple-500 dark:text-purple-300 shrink-0" />
+              <span className="hidden md:inline">Diary</span>
+            </span>
+          )}
 
-        {isTodo && (
-          <span
-            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] rounded-full shrink-0 font-medium ${
-              completedCount === totalCount && totalCount > 0
-                ? isDark
-                  ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
-                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                : isDark
-                ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20'
-                : 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-            }`}
-            title="Todo"
-          >
-            <ListTodo className="w-3 h-3 md:w-2.5 md:h-2.5 text-emerald-500 dark:text-emerald-300 shrink-0" />
-            <span className="hidden md:inline">Todo</span>
-          </span>
-        )}
+          {isTodo && (
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] rounded-full shrink-0 font-medium ${
+                completedCount === totalCount && totalCount > 0
+                  ? isDark
+                    ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  : isDark
+                  ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+              }`}
+              title="Todo"
+            >
+              <ListTodo className="w-3 h-3 md:w-2.5 md:h-2.5 text-emerald-500 dark:text-emerald-300 shrink-0" />
+              <span className="hidden md:inline">Todo</span>
+            </span>
+          )}
 
-        {!isPassKey && !isDiary && !isTodo && (
-          <span
-            className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
-              isDark
-                ? 'bg-sky-500/10 text-sky-200 border border-sky-500/20'
-                : 'bg-sky-100 text-sky-800 border border-sky-200/80'
-            }`}
-            title="Note"
-          >
-            <Feather className="w-3 h-3 md:w-2.5 md:h-2.5 text-sky-500 dark:text-sky-300 shrink-0" />
-            <span className="hidden md:inline">Note</span>
-          </span>
-        )}
+          {!isPassKey && !isDiary && !isTodo && (
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+                isDark
+                  ? 'bg-sky-500/10 text-sky-200 border border-sky-500/20'
+                  : 'bg-sky-100 text-sky-800 border border-sky-200/80'
+              }`}
+              title="Note"
+            >
+              <Feather className="w-3 h-3 md:w-2.5 md:h-2.5 text-sky-500 dark:text-sky-300 shrink-0" />
+              <span className="hidden md:inline">Note</span>
+            </span>
+          )}
+
+          {/* Reorder Grip Handle when in reorder mode */}
+          {isReorderMode && (
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center text-emerald-400 cursor-grab active:cursor-grabbing hover:bg-emerald-500/20 transition-all"
+              title="Drag to reorder"
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-1">
@@ -615,7 +626,8 @@ function NoteCard({
             <img
               src={allImages[0]}
               alt={note.title || 'Attached photo'}
-              className="w-full max-h-72 sm:max-h-80 object-contain rounded-xl"
+              className="w-full max-h-72 sm:max-h-80 object-contain rounded-xl pointer-events-none select-none"
+              draggable={false}
               loading="lazy"
             />
           </div>
@@ -635,7 +647,8 @@ function NoteCard({
                 <img
                   src={src}
                   alt=""
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover pointer-events-none select-none"
+                  draggable={false}
                   loading="lazy"
                 />
               </div>
@@ -657,7 +670,8 @@ function NoteCard({
                 <img
                   src={src}
                   alt=""
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover pointer-events-none select-none"
+                  draggable={false}
                   loading="lazy"
                 />
                 {i === 2 && allImages.length > 3 && (
@@ -735,6 +749,7 @@ export function EmptyBody({
   theme,
   notes,
   searchQuery,
+  isReorderMode = false,
   onOpenNewNote,
   onSelectNote,
   onToggleTodoItem,
@@ -754,13 +769,15 @@ export function EmptyBody({
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
 
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const suppressCardClickUntilRef = useRef<number>(0);
   const touchDragRef = useRef<{
     noteId: string;
     startX: number;
     startY: number;
-    isDragging: boolean;
+    isHolding: boolean;
     timer: ReturnType<typeof setTimeout> | null;
-  }>({ noteId: '', startX: 0, startY: 0, isDragging: false, timer: null });
+  }>({ noteId: '', startX: 0, startY: 0, isHolding: false, timer: null });
 
   const performReorder = (sourceId: string, targetId: string) => {
     if (!sourceId || !targetId || sourceId === targetId) return;
@@ -805,23 +822,109 @@ export function EmptyBody({
     setDragOverNoteId(null);
   };
 
+  // Mobile Hold-to-Drag: In reorder mode activates instantly, otherwise after 550ms hold
   const handleTouchStartCard = (e: React.TouchEvent<HTMLDivElement>, noteId: string) => {
+    if (e.touches.length !== 1) return;
     const touch = e.touches[0];
     if (touchDragRef.current.timer) clearTimeout(touchDragRef.current.timer);
+
+    if (isReorderMode) {
+      touchDragRef.current = {
+        noteId,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        isHolding: true,
+        timer: null,
+      };
+      setDraggedNoteId(noteId);
+      triggerHaptic('selection');
+      return;
+    }
+
     touchDragRef.current = {
       noteId,
       startX: touch.clientX,
       startY: touch.clientY,
-      isDragging: false,
+      isHolding: false,
       timer: setTimeout(() => {
-        touchDragRef.current.isDragging = true;
+        // User held still for 550ms: activate drag-to-reorder mode
+        touchDragRef.current.isHolding = true;
         setDraggedNoteId(noteId);
         triggerHaptic('medium');
-      }, 300),
+      }, 550),
     };
   };
 
+  const handleTouchMoveCard = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!touchDragRef.current.noteId) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchDragRef.current.startX;
+    const dy = touch.clientY - touchDragRef.current.startY;
+    const dist = Math.hypot(dx, dy);
+
+    // If still in the 550ms hold detection period:
+    if (!touchDragRef.current.isHolding) {
+      // If user moved more than 8px, they are scrolling naturally — cancel hold timer immediately
+      if (dist > 8 && touchDragRef.current.timer) {
+        clearTimeout(touchDragRef.current.timer);
+        touchDragRef.current.timer = null;
+      }
+      return;
+    }
+
+    // Hold is active: user is reordering this card
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const cardEl = element?.closest('[data-note-id]');
+    const targetId = cardEl?.getAttribute('data-note-id');
+
+    if (targetId && targetId !== touchDragRef.current.noteId) {
+      setDragOverNoteId(targetId);
+    } else {
+      setDragOverNoteId(null);
+    }
+
+    // Auto-scroll the list if dragging near edges
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      if (touch.clientY < rect.top + 70) {
+        scrollContainerRef.current.scrollTop -= 8;
+      } else if (touch.clientY > rect.bottom - 70) {
+        scrollContainerRef.current.scrollTop += 8;
+      }
+    }
+  };
+
+  const handleTouchEndCard = () => {
+    if (touchDragRef.current.timer) {
+      clearTimeout(touchDragRef.current.timer);
+      touchDragRef.current.timer = null;
+    }
+
+    if (touchDragRef.current.isHolding) {
+      const sourceId = touchDragRef.current.noteId;
+      if (sourceId && dragOverNoteId && sourceId !== dragOverNoteId) {
+        performReorder(sourceId, dragOverNoteId);
+      }
+      suppressCardClickUntilRef.current = Date.now() + 400;
+      setDraggedNoteId(null);
+      setDragOverNoteId(null);
+      touchDragRef.current.isHolding = false;
+      touchDragRef.current.noteId = '';
+    }
+  };
+
   const handleOpenContextMenu = (note: NoteItem, x: number, y: number) => {
+    const isMobile =
+      isNativePlatform() ||
+      (typeof window !== 'undefined' &&
+        (window.matchMedia('(pointer: coarse)').matches ||
+          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)));
+
+    if (isMobile) return;
     setContextMenu({ note, x, y });
   };
 
@@ -998,7 +1101,10 @@ function estimateNoteHeight(note: NoteItem): number {
   // If there are notes to show
   if (filteredNotes.length > 0) {
     return (
-      <main className="flex-1 min-h-0 w-full px-3.5 sm:px-5 md:px-8 lg:px-10 pt-3 md:pt-6 pb-28 md:pb-8 overflow-y-auto overscroll-contain no-scrollbar relative">
+      <main
+        ref={scrollContainerRef}
+        className="flex-1 min-h-0 w-full px-3.5 sm:px-5 md:px-8 lg:px-10 pt-3 md:pt-6 pb-28 md:pb-8 overflow-y-auto overscroll-contain no-scrollbar relative"
+      >
         {/* Horizontal-first Responsive Masonry Grid */}
         <div
           className="grid gap-3 md:gap-3.5 items-start"
@@ -1017,21 +1123,25 @@ function estimateNoteHeight(note: NoteItem): number {
                   onToggleTodoItem={onToggleTodoItem}
                   onOpenContextMenu={handleOpenContextMenu}
                   onUpdateNote={onUpdateNote}
+                  isReorderMode={isReorderMode}
                   isDragging={note.id === draggedNoteId}
                   isDragOver={note.id === dragOverNoteId}
+                  suppressCardClickUntil={suppressCardClickUntilRef.current}
                   onDragStartCard={handleDragStartCard}
                   onDragOverCard={handleDragOverCard}
                   onDragLeaveCard={handleDragLeaveCard}
                   onDropCard={handleDropCard}
                   onDragEndCard={handleDragEndCard}
                   onTouchStartCard={handleTouchStartCard}
+                  onTouchMoveCard={handleTouchMoveCard}
+                  onTouchEndCard={handleTouchEndCard}
                 />
               ))}
             </div>
           ))}
         </div>
 
-        {/* Floating Context Menu for Desktop Right Click & Mobile Long Press */}
+        {/* Floating Context Menu for Desktop Right Click (suppressed on mobile/touch) */}
         <CardContextMenu
           isOpen={!!contextMenu}
           position={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}

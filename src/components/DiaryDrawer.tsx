@@ -23,6 +23,7 @@ import { useIsDesktop } from '../hooks/useIsDesktop';
 import { triggerHaptic } from '../lib/capacitor';
 import { ImageLightbox } from './ImageLightbox';
 import { capitalizeFirstChar } from '../lib/formatters';
+import { SubDrawerMoreMenu } from './SubDrawerMoreMenu';
 
 // Fallback audio tone generator in case note doesn't have an audio file url
 function createSampleAudioBlob(): Blob {
@@ -313,25 +314,26 @@ export function DiaryDrawer({
                   </button>
                 )}
 
-                {onDelete && (
-                  <button
-                    id="diary-drawer-delete-btn"
-                    type="button"
-                    onClick={() => {
-                      onDelete(note.id);
-                      onClose();
-                    }}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all text-neutral-400 hover:text-red-400 ${
-                      isDark
-                        ? 'bg-[#1e1e1e] hover:bg-red-500/10'
-                        : 'bg-neutral-100 hover:bg-red-50'
-                    }`}
-                    aria-label="Delete note"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                {/* More options button (...) inside sub drawer */}
+                <SubDrawerMoreMenu
+                  theme={theme}
+                  isFavorite={note.isFavorite}
+                  onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(note.id) : undefined}
+                  onCopy={() => {
+                    const text = `${note.title ? `${note.title}\n\n` : ''}${note.content || ''}`;
+                    navigator.clipboard?.writeText(text);
+                  }}
+                  onEdit={onEdit ? () => onEdit(note) : undefined}
+                  onDelete={
+                    onDelete
+                      ? () => {
+                          onDelete(note.id);
+                          onClose();
+                        }
+                      : undefined
+                  }
+                  itemTypeLabel="Note"
+                />
 
                 <button
                   id="diary-drawer-close-btn"

@@ -195,7 +195,7 @@ export function TodoPage({
       }`}
     >
       {/* Top Header - Clean, Minimal, matching Home Page header layout */}
-      <header className="px-3 sm:px-6 pt-4 pb-2 flex items-center justify-between shrink-0 relative z-20 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full">
+      <header className="px-3 sm:px-6 pt-[max(calc(var(--safe-top,0px)+0.75rem),1.25rem)] md:pt-6 pb-2 flex items-center justify-between shrink-0 relative z-20 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full">
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"

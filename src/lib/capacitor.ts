@@ -1,6 +1,6 @@
+// Capacitor native mobile runtime helper utilities
 import { Capacitor } from '@capacitor/core';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { App as CapApp } from '@capacitor/app';
 
 /**
@@ -13,6 +13,34 @@ export const isNativePlatform = (): boolean => {
 export const getPlatform = (): 'ios' | 'android' | 'web' => {
   return Capacitor.getPlatform() as 'ios' | 'android' | 'web';
 };
+
+/**
+ * Initialize mobile environment styling and classes for safe area handling
+ */
+export const initAppEnvironment = (): void => {
+  if (typeof document === 'undefined') return;
+
+  const isAndroid =
+    Capacitor.getPlatform() === 'android' ||
+    (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent));
+
+  if (isAndroid) {
+    document.documentElement.classList.add('is-android');
+    document.body.classList.add('is-android');
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    document.documentElement.classList.add('is-native');
+    document.body.classList.add('is-native');
+    if (isAndroid) {
+      document.documentElement.classList.add('is-native-android');
+      document.body.classList.add('is-native-android');
+    }
+  }
+};
+
+// Run automatically on module load
+initAppEnvironment();
 
 /**
  * Configure native mobile status bar to match app dark/light theme
@@ -28,9 +56,18 @@ export const updateNativeStatusBar = async (isDark: boolean): Promise<void> => {
     });
 
     if (Capacitor.getPlatform() === 'android') {
-      await StatusBar.setBackgroundColor({
-        color: isDark ? '#09090b' : '#f4f4f6',
-      });
+      try {
+        await StatusBar.setOverlaysWebView({ overlay: true });
+      } catch {
+        // ignore
+      }
+      try {
+        await StatusBar.setBackgroundColor({
+          color: isDark ? '#09090b' : '#f4f4f6',
+        });
+      } catch {
+        // ignore
+      }
     }
   } catch {
     // Graceful fallback if running in non-native or unsupported environment
@@ -38,48 +75,13 @@ export const updateNativeStatusBar = async (isDark: boolean): Promise<void> => {
 };
 
 /**
- * Haptic feedback helpers for native feel, with graceful fallback on web
+ * Haptic feedback helper - completely removed/disabled for phone as requested
  */
 export const triggerHaptic = async (
-  type: 'light' | 'medium' | 'heavy' | 'selection' | 'success' | 'warning' | 'error' = 'light'
+  _type: 'light' | 'medium' | 'heavy' | 'selection' | 'success' | 'warning' | 'error' = 'light'
 ): Promise<void> => {
-  if (Capacitor.isPluginAvailable('Haptics')) {
-    try {
-      if (type === 'light') {
-        await Haptics.impact({ style: ImpactStyle.Light });
-      } else if (type === 'medium') {
-        await Haptics.impact({ style: ImpactStyle.Medium });
-      } else if (type === 'heavy') {
-        await Haptics.impact({ style: ImpactStyle.Heavy });
-      } else if (type === 'selection') {
-        await Haptics.selectionChanged();
-      } else if (type === 'success') {
-        await Haptics.notification({ type: NotificationType.Success });
-      } else if (type === 'warning') {
-        await Haptics.notification({ type: NotificationType.Warning });
-      } else if (type === 'error') {
-        await Haptics.notification({ type: NotificationType.Error });
-      }
-      return;
-    } catch {
-      // ignore
-    }
-  }
-
-  // Web fallback
-  if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-    try {
-      if (type === 'light' || type === 'selection') {
-        navigator.vibrate(10);
-      } else if (type === 'medium') {
-        navigator.vibrate(20);
-      } else if (type === 'success') {
-        navigator.vibrate([15, 40, 15]);
-      }
-    } catch {
-      // ignore
-    }
-  }
+  // Haptic feedback removed for phone per user request
+  return;
 };
 
 /**

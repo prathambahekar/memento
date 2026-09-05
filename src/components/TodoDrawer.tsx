@@ -14,6 +14,7 @@ import {
 import { ThemeMode, NoteItem, TodoSubItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { capitalizeFirstChar } from '../lib/formatters';
+import { SubDrawerMoreMenu } from './SubDrawerMoreMenu';
 
 interface TodoDrawerProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ interface TodoDrawerProps {
   onUpdateNote: (updatedNote: NoteItem) => void;
   onEdit?: (note: NoteItem) => void;
   onDelete?: (id: string) => void;
+  onToggleFavorite?: (id: string) => void;
 }
 
 export function parseTodoItemsFromNote(note: NoteItem): TodoSubItem[] {
@@ -81,6 +83,7 @@ export function TodoDrawer({
   onUpdateNote,
   onEdit,
   onDelete,
+  onToggleFavorite,
 }: TodoDrawerProps) {
   const isDark = theme === 'dark';
   const isDesktop = useIsDesktop();
@@ -228,25 +231,29 @@ export function TodoDrawer({
                   </button>
                 )}
 
-                {onDelete && (
-                  <button
-                    id="todo-drawer-delete-btn"
-                    type="button"
-                    onClick={() => {
-                      onDelete(note.id);
-                      onClose();
-                    }}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all text-neutral-400 hover:text-red-400 ${
-                      isDark
-                        ? 'bg-[#1e1e1e] hover:bg-red-500/10'
-                        : 'bg-neutral-100 hover:bg-red-50'
-                    }`}
-                    aria-label="Delete todo list"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                {/* More options button (...) inside sub drawer */}
+                <SubDrawerMoreMenu
+                  theme={theme}
+                  isFavorite={note.isFavorite}
+                  onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(note.id) : undefined}
+                  onCopy={() => {
+                    const text = `${note.title ? `${note.title}\n\n` : ''}${currentItems
+                      .map((item) => `[${item.completed ? 'x' : ' '}] ${item.text}`)
+                      .join('\n')}`;
+                    navigator.clipboard?.writeText(text);
+                  }}
+                  onEdit={onEdit ? () => onEdit(note) : undefined}
+                  onDelete={
+                    onDelete
+                      ? () => {
+                          onDelete(note.id);
+                          onClose();
+                        }
+                      : undefined
+                  }
+                  copyLabel="Copy Checklist"
+                  itemTypeLabel="Todos"
+                />
 
                 <button
                   id="todo-drawer-close-btn"

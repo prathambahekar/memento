@@ -36,7 +36,7 @@ export function TopBar({
   const currentTitle = sectionTitles[activeTab] || 'Notes';
 
   return (
-    <header className="shrink-0 relative w-full z-20 px-5 md:px-8 pt-[max(1rem,env(safe-area-inset-top))] md:pt-6 pb-3 md:pb-4 flex items-center justify-between transition-colors">
+    <header className="shrink-0 relative w-full z-20 px-5 md:px-8 pt-[max(calc(var(--safe-top,0px)+0.75rem),1.25rem)] md:pt-6 pb-3 md:pb-4 flex items-center justify-between transition-colors">
       {/* Left side: Mobile brand title or Desktop section title */}
       <div className="flex items-center gap-3">
         {/* Mobile brand title */}

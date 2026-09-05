@@ -83,7 +83,7 @@ export function SettingsPage({
       }`}
     >
       {/* Top Bar with Back Button */}
-      <header className="px-3 md:px-6 pt-4 md:pt-6 pb-3 flex items-center justify-between z-10 shrink-0 max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto w-full">
+      <header className="px-3 md:px-6 pt-[max(calc(var(--safe-top,0px)+0.75rem),1.25rem)] md:pt-6 pb-3 flex items-center justify-between z-10 shrink-0 max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto w-full">
         <div className="flex items-center gap-2">
           <button
             id="settings-back-btn"

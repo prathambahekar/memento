@@ -36,6 +36,7 @@ export default function App() {
   const [selectedTodoNote, setSelectedTodoNote] = useState<NoteItem | null>(null);
   const [selectedDiaryNote, setSelectedDiaryNote] = useState<NoteItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isReorderMode, setIsReorderMode] = useState(false);
 
   const handleOpenNewNote = () => {
     setEditingNote(null);
@@ -282,6 +283,12 @@ export default function App() {
     } else if (itemId === 'my-things') {
       setActiveTab('home');
       setCurrentPage('main');
+    } else if (itemId === 'reorder') {
+      setIsReorderMode((prev) => !prev);
+      triggerHaptic('medium');
+      if (currentPage !== 'main') {
+        setCurrentPage('main');
+      }
     }
   };
 
@@ -379,6 +386,8 @@ export default function App() {
           onOpenData={() => setIsDataDrawerOpen(true)}
           onOpenSettings={() => setCurrentPage('settings')}
           onToggleTheme={toggleTheme}
+          isReorderMode={isReorderMode}
+          onToggleReorder={() => setIsReorderMode((prev) => !prev)}
         />
 
         {/* Main Content Area */}
@@ -436,6 +445,7 @@ export default function App() {
                 theme={theme}
                 notes={notes}
                 searchQuery={searchQuery}
+                isReorderMode={isReorderMode}
                 onOpenNewNote={handleOpenNewNote}
                 onSelectNote={handleSelectNote}
                 onToggleTodoItem={handleToggleTodoItem}
@@ -497,6 +507,8 @@ export default function App() {
           onToggleTheme={toggleTheme}
           onClose={() => setIsDrawerOpen(false)}
           onSelectItem={handleDrawerSelect}
+          isReorderMode={isReorderMode}
+          onToggleReorder={() => setIsReorderMode((prev) => !prev)}
         />
 
         {/* New Note Composer Sheet opened by '+' button */}
@@ -550,6 +562,12 @@ export default function App() {
             setNotes((prev) => prev.filter((n) => n.id !== id));
             setSelectedPassKeyNote(null);
           }}
+          onToggleFavorite={(id) => {
+            handleToggleFavorite(id);
+            setSelectedPassKeyNote((prev) =>
+              prev && prev.id === id ? { ...prev, isFavorite: !prev.isFavorite } : prev
+            );
+          }}
         />
 
         {/* Todo Detail Drawer Menu */}
@@ -572,6 +590,12 @@ export default function App() {
           onDelete={(id) => {
             setNotes((prev) => prev.filter((n) => n.id !== id));
             setSelectedTodoNote(null);
+          }}
+          onToggleFavorite={(id) => {
+            handleToggleFavorite(id);
+            setSelectedTodoNote((prev) =>
+              prev && prev.id === id ? { ...prev, isFavorite: !prev.isFavorite } : prev
+            );
           }}
         />
 

@@ -16,6 +16,7 @@ import {
 import { ThemeMode, NoteItem } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { capitalizeFirstChar } from '../lib/formatters';
+import { SubDrawerMoreMenu } from './SubDrawerMoreMenu';
 
 interface PassKeyDrawerProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ interface PassKeyDrawerProps {
   onClose: () => void;
   onEdit?: (note: NoteItem) => void;
   onDelete?: (id: string) => void;
+  onToggleFavorite?: (id: string) => void;
 }
 
 export function PassKeyDrawer({
@@ -33,6 +35,7 @@ export function PassKeyDrawer({
   onClose,
   onEdit,
   onDelete,
+  onToggleFavorite,
 }: PassKeyDrawerProps) {
   const isDark = theme === 'dark';
   const isDesktop = useIsDesktop();
@@ -153,25 +156,27 @@ export function PassKeyDrawer({
                   </button>
                 )}
 
-                {onDelete && (
-                  <button
-                    id="passkey-drawer-delete-btn"
-                    type="button"
-                    onClick={() => {
-                      onDelete(note.id);
-                      onClose();
-                    }}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all text-neutral-400 hover:text-red-400 ${
-                      isDark
-                        ? 'bg-[#1e1e1e] hover:bg-red-500/10'
-                        : 'bg-neutral-100 hover:bg-red-50'
-                    }`}
-                    aria-label="Delete entry"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                {/* More options button (...) inside sub drawer */}
+                <SubDrawerMoreMenu
+                  theme={theme}
+                  isFavorite={note.isFavorite}
+                  onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(note.id) : undefined}
+                  onCopy={() => {
+                    const text = `${note.title ? `${note.title}\n` : ''}${email ? `User: ${email}\n` : ''}${password ? `Password: ${password}\n` : ''}${secretNotes ? `Notes: ${secretNotes}` : ''}`;
+                    navigator.clipboard?.writeText(text.trim());
+                  }}
+                  onEdit={onEdit ? () => onEdit(note) : undefined}
+                  onDelete={
+                    onDelete
+                      ? () => {
+                          onDelete(note.id);
+                          onClose();
+                        }
+                      : undefined
+                  }
+                  copyLabel="Copy Details"
+                  itemTypeLabel="Entry"
+                />
 
                 <button
                   id="passkey-drawer-close-btn"
