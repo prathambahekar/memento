@@ -51,6 +51,9 @@ export interface PersonalInfoField {
   label: string;
   value: string;
   isMasked?: boolean;
+  document?: DocumentAttachment;
+  image?: string;
+  documentName?: string;
 }
 
 export interface VoiceNoteAttachment {

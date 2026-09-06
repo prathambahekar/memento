@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
 } from 'lucide-react';
 import { NavTab, ThemeMode, NoteItem, AppPage } from '../types';
+import { triggerHaptic } from '../lib/capacitor';
 
 interface DesktopSidebarProps {
   activeTab: NavTab;
@@ -302,7 +303,10 @@ export function DesktopSidebar({
             <button
               id="desktop-new-note-collapsed-btn"
               type="button"
-              onClick={onOpenNewNote}
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenNewNote();
+              }}
               title="Add (N)"
               className={`w-9 h-9 rounded-xl flex items-center justify-center font-medium transition-all duration-150 active:scale-95 shadow-xs ${
                 isDark
@@ -316,7 +320,10 @@ export function DesktopSidebar({
             <button
               id="desktop-new-note-btn"
               type="button"
-              onClick={onOpenNewNote}
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenNewNote();
+              }}
               className={`w-full h-9 px-3 rounded-xl flex items-center justify-center gap-2 font-medium text-xs transition-all duration-150 active:scale-[0.98] shadow-xs ${
                 isDark
                   ? 'bg-white text-black hover:bg-neutral-200'

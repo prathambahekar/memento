@@ -53,9 +53,14 @@ export default function App() {
   const [homeChip, setHomeChip] = useState<HomeChipFilter>('all');
   const [newNoteInitialType, setNewNoteInitialType] = useState<EntryType | undefined>(undefined);
 
-  const handleOpenNewNote = (preferredType?: EntryType) => {
+  const handleOpenNewNote = (preferredType?: unknown) => {
+    const validTypes: EntryType[] = ['notes', 'todo', 'passwords', 'diary'];
+    const safeType: EntryType | undefined =
+      typeof preferredType === 'string' && (validTypes as string[]).includes(preferredType)
+        ? (preferredType as EntryType)
+        : undefined;
     setEditingNote(null);
-    setNewNoteInitialType(preferredType);
+    setNewNoteInitialType(safeType);
     setIsNewNoteOpen(true);
   };
 
@@ -484,7 +489,17 @@ export default function App() {
             }
           }}
           onOpenTodo={() => setCurrentPage('todo')}
-          onOpenNewNote={handleOpenNewNote}
+          onOpenNewNote={() => {
+            if (currentPage === 'todo' || activeTab === 'todo') {
+              handleOpenNewNote('todo');
+            } else if (currentPage === 'safe' || activeTab === 'vault' || activeTab === 'safe') {
+              handleOpenNewNote('passwords');
+            } else if (activeTab === 'diary') {
+              handleOpenNewNote('diary');
+            } else {
+              handleOpenNewNote('notes');
+            }
+          }}
           onOpenSearch={() => setIsSearchDrawerOpen(true)}
           onOpenData={() => setIsDataDrawerOpen(true)}
           onOpenSettings={() => setCurrentPage('settings')}

@@ -23,12 +23,14 @@ import {
   Play,
   Pause,
   ChevronDown,
+  MoreVertical,
 } from 'lucide-react';
-import { ThemeMode, NoteItem, PersonalInfoField } from '../types';
+import { ThemeMode, NoteItem, PersonalInfoField, DocumentAttachment } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { capitalizeFirstChar } from '../lib/formatters';
 import { SubDrawerMoreMenu } from './SubDrawerMoreMenu';
 import { ImageLightbox } from './ImageLightbox';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { triggerHaptic } from '../lib/capacitor';
 
 interface PassKeyDrawerProps {
@@ -85,23 +87,35 @@ export function PassKeyDrawer({
   const [unmaskedFields, setUnmaskedFields] = useState<Record<string, boolean>>({});
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<DocumentAttachment | null>(null);
 
-  // Adding personal detail inline state
+  // Adding / Editing personal detail inline state
   const [isAddingField, setIsAddingField] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [activeFieldMenuId, setActiveFieldMenuId] = useState<string | null>(null);
   const [fieldLabelInput, setFieldLabelInput] = useState('');
   const [fieldValInput, setFieldValInput] = useState('');
   const [fieldIsMasked, setFieldIsMasked] = useState(false);
   const [showFieldPresetsPopup, setShowFieldPresetsPopup] = useState(false);
+  const [fieldDocAttachment, setFieldDocAttachment] = useState<DocumentAttachment | null>(null);
+  const [fieldImgAttachment, setFieldImgAttachment] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const detailInputRef = useRef<HTMLInputElement | null>(null);
+  const fieldDocInputRef = useRef<HTMLInputElement | null>(null);
+  const fieldImgInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setIsAddingField(false);
+    setEditingFieldId(null);
+    setActiveFieldMenuId(null);
     setFieldLabelInput('');
     setFieldValInput('');
     setFieldIsMasked(false);
     setShowFieldPresetsPopup(false);
+    setFieldDocAttachment(null);
+    setFieldImgAttachment(null);
+    setPreviewDoc(null);
   }, [note?.id, isOpen]);
 
   useEffect(() => {
@@ -112,6 +126,47 @@ export function PassKeyDrawer({
       }
     };
   }, []);
+
+  const handleFieldDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
+          setFieldDocAttachment({
+            id: `doc-${Date.now()}`,
+            name: file.name,
+            size: sizeStr,
+            type: file.type,
+            dataUrl: event.target.result as string,
+            uploadedAt: new Date().toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+            }),
+          });
+          triggerHaptic('success');
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+  };
+
+  const handleFieldImgChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setFieldImgAttachment(event.target.result as string);
+          triggerHaptic('success');
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+  };
 
   if (!note) return null;
 
@@ -379,21 +434,49 @@ export function PassKeyDrawer({
     },
   ];
 
-  const handleSaveField = (label: string, value: string, isMasked: boolean) => {
+  const handleSaveField = (
+    label: string,
+    value: string,
+    isMasked: boolean,
+    docAttachment?: DocumentAttachment | null,
+    imgAttachment?: string | null,
+    targetFieldId?: string | null
+  ) => {
     if (!label.trim() || !value.trim() || !note) return;
     triggerHaptic('success');
-    const newField: PersonalInfoField = {
-      id: `pi-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      label: label.trim(),
-      value: value.trim(),
-      isMasked,
-    };
+
     const baseFields =
       note.personalInfo && note.personalInfo.length > 0 ? note.personalInfo : personalFields;
-    const cleanFields = baseFields.filter(
-      (f) => !f.id.startsWith('extracted-') || f.value !== newField.value
-    );
-    const updatedPersonalInfo = [...cleanFields, newField];
+
+    let updatedPersonalInfo: PersonalInfoField[];
+    if (targetFieldId) {
+      updatedPersonalInfo = baseFields.map((f) => {
+        if (f.id === targetFieldId) {
+          return {
+            ...f,
+            label: label.trim(),
+            value: value.trim(),
+            isMasked,
+            document: docAttachment || undefined,
+            image: imgAttachment || undefined,
+          };
+        }
+        return f;
+      });
+    } else {
+      const newField: PersonalInfoField = {
+        id: `pi-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        label: label.trim(),
+        value: value.trim(),
+        isMasked,
+        document: docAttachment || undefined,
+        image: imgAttachment || undefined,
+      };
+      const cleanFields = baseFields.filter(
+        (f) => !f.id.startsWith('extracted-') || f.value !== newField.value
+      );
+      updatedPersonalInfo = [...cleanFields, newField];
+    }
 
     const updatedNote: NoteItem = {
       ...note,
@@ -409,8 +492,35 @@ export function PassKeyDrawer({
       onEdit(updatedNote);
     }
     setIsAddingField(false);
+    setEditingFieldId(null);
     setFieldLabelInput('');
     setFieldValInput('');
+    setFieldDocAttachment(null);
+    setFieldImgAttachment(null);
+    setShowFieldPresetsPopup(false);
+  };
+
+  const handleStartEditField = (field: PersonalInfoField) => {
+    triggerHaptic('light');
+    setIsAddingField(false);
+    setEditingFieldId(field.id);
+    setFieldLabelInput(field.label);
+    setFieldValInput(field.value);
+    setFieldIsMasked(field.isMasked ?? false);
+    setFieldDocAttachment(field.document || null);
+    setFieldImgAttachment(field.image || null);
+    setShowFieldPresetsPopup(false);
+  };
+
+  const handleCancelEdit = () => {
+    triggerHaptic('light');
+    setEditingFieldId(null);
+    setIsAddingField(false);
+    setFieldLabelInput('');
+    setFieldValInput('');
+    setFieldDocAttachment(null);
+    setFieldImgAttachment(null);
+    setShowFieldPresetsPopup(false);
   };
 
   const handleDeleteField = (fieldId: string) => {
@@ -550,6 +660,8 @@ export function PassKeyDrawer({
                           setFieldLabelInput('');
                           setFieldValInput('');
                           setShowFieldPresetsPopup(false);
+                          setFieldDocAttachment(null);
+                          setFieldImgAttachment(null);
                         }}
                         className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
                           isDark
@@ -568,7 +680,13 @@ export function PassKeyDrawer({
                         type="button"
                         onClick={() => {
                           if (fieldLabelInput.trim() && fieldValInput.trim()) {
-                            handleSaveField(fieldLabelInput, fieldValInput, fieldIsMasked);
+                            handleSaveField(
+                              fieldLabelInput,
+                              fieldValInput,
+                              fieldIsMasked,
+                              fieldDocAttachment,
+                              fieldImgAttachment
+                            );
                             setShowFieldPresetsPopup(false);
                           }
                         }}
@@ -688,25 +806,81 @@ export function PassKeyDrawer({
                               >
                                 Field Name / Label
                               </label>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShowFieldPresetsPopup((prev) => !prev);
-                                }}
-                                className={`text-[10px] flex items-center gap-1 font-medium transition-colors ${
-                                  isDark
-                                    ? 'text-neutral-400 hover:text-white'
-                                    : 'text-neutral-500 hover:text-neutral-900'
-                                }`}
-                              >
-                                <span>Choose type</span>
-                                <ChevronDown
-                                  className={`w-3 h-3 transition-transform duration-200 ${
-                                    showFieldPresetsPopup ? 'rotate-180' : ''
+                              <div className="flex items-center gap-1.5">
+                                {/* Option to attach Document (just as icon) */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fieldDocInputRef.current?.click();
+                                  }}
+                                  className={`p-1 rounded-lg transition-all active:scale-90 ${
+                                    fieldDocAttachment
+                                      ? isDark
+                                        ? 'bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-500/40'
+                                        : 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                                      : isDark
+                                      ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-black/5'
                                   }`}
-                                />
-                              </button>
+                                  title={
+                                    fieldDocAttachment
+                                      ? `Document attached: ${fieldDocAttachment.name} (click to replace)`
+                                      : 'Attach document for this field'
+                                  }
+                                  aria-label="Attach document"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Option to attach Image (just as icon) */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fieldImgAttachment
+                                      ? setLightboxImg(fieldImgAttachment)
+                                      : fieldImgInputRef.current?.click();
+                                  }}
+                                  className={`p-1 rounded-lg transition-all active:scale-90 ${
+                                    fieldImgAttachment
+                                      ? isDark
+                                        ? 'bg-sky-500/25 text-sky-300 ring-1 ring-sky-500/40'
+                                        : 'bg-sky-100 text-sky-700 ring-1 ring-sky-300'
+                                      : isDark
+                                      ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-black/5'
+                                  }`}
+                                  title={
+                                    fieldImgAttachment
+                                      ? 'Image attached (click to preview)'
+                                      : 'Attach image for this field'
+                                  }
+                                  aria-label="Attach image"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowFieldPresetsPopup((prev) => !prev);
+                                  }}
+                                  className={`text-[10px] flex items-center gap-1 font-medium transition-colors ${
+                                    isDark
+                                      ? 'text-neutral-400 hover:text-white'
+                                      : 'text-neutral-500 hover:text-neutral-900'
+                                  }`}
+                                >
+                                  <span>Choose type</span>
+                                  <ChevronDown
+                                    className={`w-3 h-3 transition-transform duration-200 ${
+                                      showFieldPresetsPopup ? 'rotate-180' : ''
+                                    }`}
+                                  />
+                                </button>
+                              </div>
                             </div>
                             <input
                               type="text"
@@ -720,6 +894,62 @@ export function PassKeyDrawer({
                                 isDark ? 'text-white' : 'text-neutral-900'
                               }`}
                             />
+
+                            {/* Attached document or image badge preview */}
+                            {(fieldDocAttachment || fieldImgAttachment) && (
+                              <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-dashed border-neutral-700/30">
+                                {fieldDocAttachment && (
+                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-500/15 text-indigo-300 text-[11px] font-medium max-w-[200px]">
+                                    <FileText className="w-3 h-3 shrink-0 text-indigo-400" />
+                                    <span className="truncate">{fieldDocAttachment.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setFieldDocAttachment(null);
+                                      }}
+                                      className="p-0.5 rounded-full hover:bg-indigo-500/30 text-indigo-300"
+                                      title="Remove document"
+                                    >
+                                      <X className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                )}
+                                {fieldImgAttachment && (
+                                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-xl bg-sky-500/15 text-sky-300 text-[11px] font-medium">
+                                    <img
+                                      src={fieldImgAttachment}
+                                      alt="Thumbnail"
+                                      className="w-4 h-4 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLightboxImg(fieldImgAttachment);
+                                      }}
+                                    />
+                                    <span
+                                      className="text-[10.5px] cursor-pointer hover:underline"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLightboxImg(fieldImgAttachment);
+                                      }}
+                                    >
+                                      Photo attached
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setFieldImgAttachment(null);
+                                      }}
+                                      className="p-0.5 rounded-full hover:bg-sky-500/30 text-sky-300"
+                                      title="Remove image"
+                                    >
+                                      <X className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {/* In-Flow Card for Suggested Types - Borderless, NO split lines, vibrant app colors */}
@@ -858,7 +1088,13 @@ export function PassKeyDrawer({
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && fieldLabelInput.trim() && fieldValInput.trim()) {
-                                handleSaveField(fieldLabelInput, fieldValInput, fieldIsMasked);
+                                handleSaveField(
+                                  fieldLabelInput,
+                                  fieldValInput,
+                                  fieldIsMasked,
+                                  fieldDocAttachment,
+                                  fieldImgAttachment
+                                );
                                 setShowFieldPresetsPopup(false);
                               }
                             }}
@@ -897,6 +1133,319 @@ export function PassKeyDrawer({
                           const meta = getFieldMeta(field.label);
                           const FieldIcon = meta.icon;
 
+                          if (editingFieldId === field.id) {
+                            return (
+                              <div
+                                key={field.id}
+                                className={`p-3.5 rounded-2xl transition-all border ${
+                                  isDark
+                                    ? 'bg-[#1a1a1e] border-indigo-500/30 ring-1 ring-indigo-500/20'
+                                    : 'bg-white border-indigo-200 ring-1 ring-indigo-300 shadow-sm'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <label
+                                    className={`block text-[10px] font-semibold uppercase tracking-wider ${
+                                      isDark ? 'text-indigo-400' : 'text-indigo-600'
+                                    }`}
+                                  >
+                                    Edit Field
+                                  </label>
+                                  <div className="flex items-center gap-1.5">
+                                    {/* Option to attach Document (just as icon) */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        fieldDocInputRef.current?.click();
+                                      }}
+                                      className={`p-1 rounded-lg transition-all active:scale-90 ${
+                                        fieldDocAttachment
+                                          ? isDark
+                                            ? 'bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-500/40'
+                                            : 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                                          : isDark
+                                          ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                                          : 'text-neutral-500 hover:text-neutral-900 hover:bg-black/5'
+                                      }`}
+                                      title={
+                                        fieldDocAttachment
+                                          ? `Document attached: ${fieldDocAttachment.name} (click to replace)`
+                                          : 'Attach document for this field'
+                                      }
+                                      aria-label="Attach document"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Option to attach Image (just as icon) */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        fieldImgAttachment
+                                          ? setLightboxImg(fieldImgAttachment)
+                                          : fieldImgInputRef.current?.click();
+                                      }}
+                                      className={`p-1 rounded-lg transition-all active:scale-90 ${
+                                        fieldImgAttachment
+                                          ? isDark
+                                            ? 'bg-sky-500/25 text-sky-300 ring-1 ring-sky-500/40'
+                                            : 'bg-sky-100 text-sky-700 ring-1 ring-sky-300'
+                                          : isDark
+                                          ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                                          : 'text-neutral-500 hover:text-neutral-900 hover:bg-black/5'
+                                      }`}
+                                      title={
+                                        fieldImgAttachment
+                                          ? 'Image attached (click to preview)'
+                                          : 'Attach image for this field'
+                                      }
+                                      aria-label="Attach image"
+                                    >
+                                      <ImageIcon className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowFieldPresetsPopup((prev) => !prev);
+                                      }}
+                                      className={`text-[10px] flex items-center gap-1 font-medium transition-colors ${
+                                        isDark
+                                          ? 'text-neutral-400 hover:text-white'
+                                          : 'text-neutral-500 hover:text-neutral-900'
+                                      }`}
+                                    >
+                                      <span>Choose type</span>
+                                      <ChevronDown
+                                        className={`w-3 h-3 transition-transform duration-200 ${
+                                          showFieldPresetsPopup ? 'rotate-180' : ''
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <input
+                                  type="text"
+                                  value={fieldLabelInput}
+                                  onChange={(e) => setFieldLabelInput(e.target.value)}
+                                  placeholder="Field name or choose type..."
+                                  className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-500 font-medium pb-1.5 border-b mb-2.5 ${
+                                    isDark ? 'text-white border-neutral-800' : 'text-neutral-900 border-neutral-200'
+                                  }`}
+                                />
+
+                                {/* Presets popup if opened */}
+                                <AnimatePresence>
+                                  {showFieldPresetsPopup && (
+                                    <motion.div
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: 'auto' }}
+                                      exit={{ opacity: 0, height: 0 }}
+                                      transition={{ duration: 0.15 }}
+                                      className="overflow-hidden mb-2.5"
+                                    >
+                                      <div
+                                        className={`p-1.5 rounded-2xl transition-colors border ${
+                                          isDark
+                                            ? 'bg-[#202024] border-neutral-700/60'
+                                            : 'bg-white border-neutral-200 shadow-sm'
+                                        }`}
+                                      >
+                                        <div className="max-h-44 overflow-y-auto space-y-0.5 no-scrollbar">
+                                          {PRESET_PERSONAL_FIELDS.map((preset) => {
+                                            const IconComp = preset.icon;
+                                            const isSelected = fieldLabelInput === preset.label;
+                                            return (
+                                              <button
+                                                key={preset.label}
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  triggerHaptic('light');
+                                                  setFieldLabelInput(preset.label);
+                                                  setFieldIsMasked(preset.masked);
+                                                  setShowFieldPresetsPopup(false);
+                                                }}
+                                                className={`w-full px-2.5 py-1.5 rounded-xl flex items-center justify-between text-left transition-all ${
+                                                  isSelected
+                                                    ? isDark
+                                                      ? 'bg-white/10 text-white font-medium'
+                                                      : 'bg-neutral-100 text-neutral-900 font-semibold'
+                                                    : isDark
+                                                    ? 'hover:bg-white/5 text-neutral-200'
+                                                    : 'hover:bg-black/5 text-neutral-800'
+                                                }`}
+                                              >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                  <div
+                                                    className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                                                      isDark ? preset.iconDark : preset.iconLight
+                                                    }`}
+                                                  >
+                                                    <IconComp className="w-3 h-3 stroke-[2]" />
+                                                  </div>
+                                                  <span className="text-xs font-medium truncate">
+                                                    {preset.label}
+                                                  </span>
+                                                </div>
+                                                <span
+                                                  className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-medium ${
+                                                    isDark ? preset.badgeDark : preset.badgeLight
+                                                  }`}
+                                                >
+                                                  {preset.typeName}
+                                                </span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+
+                                {/* Value Input and Masked toggle */}
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <input
+                                    type={fieldIsMasked ? 'password' : 'text'}
+                                    value={fieldValInput}
+                                    onChange={(e) => setFieldValInput(e.target.value)}
+                                    placeholder="Enter number or text..."
+                                    className={`w-full bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-500 ${
+                                      isDark ? 'text-white' : 'text-neutral-900'
+                                    }`}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setFieldIsMasked((prev) => !prev)}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium transition-colors shrink-0 ${
+                                      fieldIsMasked
+                                        ? isDark
+                                          ? 'bg-neutral-800 text-neutral-300'
+                                          : 'bg-neutral-200 text-neutral-800'
+                                        : isDark
+                                        ? 'bg-neutral-800/40 text-neutral-500 hover:text-neutral-300'
+                                        : 'bg-neutral-200/50 text-neutral-500 hover:text-neutral-800'
+                                    }`}
+                                  >
+                                    {fieldIsMasked ? (
+                                      <>
+                                        <EyeOff className="w-3 h-3" />
+                                        <span>Masked</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Eye className="w-3 h-3" />
+                                        <span>Visible</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+
+                                {/* Attached document or image badge preview */}
+                                {(fieldDocAttachment || fieldImgAttachment) && (
+                                  <div className="flex flex-wrap items-center gap-2 mb-3 pt-2 border-t border-dashed border-neutral-700/30">
+                                    {fieldDocAttachment && (
+                                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-500/15 text-indigo-300 text-[11px] font-medium max-w-[200px]">
+                                        <FileText className="w-3 h-3 shrink-0 text-indigo-400" />
+                                        <span className="truncate">{fieldDocAttachment.name}</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setFieldDocAttachment(null);
+                                          }}
+                                          className="p-0.5 rounded-full hover:bg-indigo-500/30 text-indigo-300"
+                                          title="Remove document"
+                                        >
+                                          <X className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                    {fieldImgAttachment && (
+                                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-xl bg-sky-500/15 text-sky-300 text-[11px] font-medium">
+                                        <img
+                                          src={fieldImgAttachment}
+                                          alt="Thumbnail"
+                                          className="w-4 h-4 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setLightboxImg(fieldImgAttachment);
+                                          }}
+                                        />
+                                        <span
+                                          className="text-[10.5px] cursor-pointer hover:underline"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setLightboxImg(fieldImgAttachment);
+                                          }}
+                                        >
+                                          Photo attached
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setFieldImgAttachment(null);
+                                          }}
+                                          className="p-0.5 rounded-full hover:bg-sky-500/30 text-sky-300"
+                                          title="Remove image"
+                                        >
+                                          <X className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Bottom action buttons: Cancel and Update */}
+                                <div className="flex items-center justify-end gap-2 pt-1 border-t border-neutral-800/40">
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEdit}
+                                    className={`h-7 px-3 rounded-full text-xs font-medium transition-all ${
+                                      isDark
+                                        ? 'text-neutral-400 hover:text-white hover:bg-white/5'
+                                        : 'text-neutral-600 hover:text-neutral-900 hover:bg-black/5'
+                                    }`}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (fieldLabelInput.trim() && fieldValInput.trim()) {
+                                        handleSaveField(
+                                          fieldLabelInput,
+                                          fieldValInput,
+                                          fieldIsMasked,
+                                          fieldDocAttachment,
+                                          fieldImgAttachment,
+                                          field.id
+                                        );
+                                      }
+                                    }}
+                                    disabled={!fieldLabelInput.trim() || !fieldValInput.trim()}
+                                    className={`h-7 px-3.5 rounded-full flex items-center gap-1 font-medium text-xs active:scale-95 transition-all shadow-xs ${
+                                      !fieldLabelInput.trim() || !fieldValInput.trim()
+                                        ? 'opacity-40 cursor-not-allowed bg-neutral-800 text-neutral-500'
+                                        : isDark
+                                        ? 'bg-white text-black hover:bg-neutral-200'
+                                        : 'bg-neutral-900 text-white hover:bg-neutral-800'
+                                    }`}
+                                  >
+                                    <Check className="w-3 h-3 stroke-[2.4]" />
+                                    <span>Update</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           return (
                             <div
                               key={field.id}
@@ -928,6 +1477,7 @@ export function PassKeyDrawer({
                                 </div>
 
                                 <div className="flex items-center gap-1 shrink-0">
+                                  {/* Mask toggle button */}
                                   <button
                                     type="button"
                                     onClick={() => toggleUnmaskField(field.id)}
@@ -946,6 +1496,7 @@ export function PassKeyDrawer({
                                     )}
                                   </button>
 
+                                  {/* Copy button */}
                                   <button
                                     type="button"
                                     onClick={() => handleCopy(field.value, field.id)}
@@ -970,18 +1521,88 @@ export function PassKeyDrawer({
                                     )}
                                   </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteField(field.id)}
-                                    className={`w-6 h-6 rounded-lg flex items-center justify-center active:scale-95 transition-all ${
-                                      isDark
-                                        ? 'hover:bg-red-500/20 text-neutral-500 hover:text-red-400'
-                                        : 'hover:bg-red-50 text-neutral-400 hover:text-red-600'
-                                    }`}
-                                    title="Delete field"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                  {/* More options button: houses Edit and Delete */}
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        triggerHaptic('light');
+                                        setActiveFieldMenuId((prev) => (prev === field.id ? null : field.id));
+                                      }}
+                                      className={`w-6 h-6 rounded-lg flex items-center justify-center active:scale-95 transition-all ${
+                                        activeFieldMenuId === field.id
+                                          ? isDark
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-neutral-300 text-neutral-900'
+                                          : isDark
+                                          ? 'bg-[#262626] hover:bg-[#303030] text-neutral-300'
+                                          : 'bg-neutral-200 hover:bg-neutral-300 text-neutral-800'
+                                      }`}
+                                      title="More options"
+                                      aria-label="More options"
+                                    >
+                                      <MoreVertical className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* More Menu Dropdown */}
+                                    <AnimatePresence>
+                                      {activeFieldMenuId === field.id && (
+                                        <>
+                                          <div
+                                            className="fixed inset-0 z-40"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setActiveFieldMenuId(null);
+                                            }}
+                                          />
+                                          <motion.div
+                                            initial={{ opacity: 0, scale: 0.94, y: -4 }}
+                                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.94, y: -4 }}
+                                            transition={{ duration: 0.12 }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className={`absolute right-0 top-7 w-28 rounded-xl p-1 z-50 border shadow-xl backdrop-blur-xl ${
+                                              isDark
+                                                ? 'bg-[#1e1e22]/95 border-neutral-700/80 text-neutral-200 shadow-black/80'
+                                                : 'bg-white/95 border-neutral-200 text-neutral-800 shadow-neutral-300/80'
+                                            }`}
+                                          >
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveFieldMenuId(null);
+                                                handleStartEditField(field);
+                                              }}
+                                              className={`w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition-colors text-left ${
+                                                isDark
+                                                  ? 'hover:bg-white/10 hover:text-white'
+                                                  : 'hover:bg-neutral-100 hover:text-neutral-900'
+                                              }`}
+                                            >
+                                              <Pencil className="w-3.5 h-3.5" />
+                                              <span>Edit</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveFieldMenuId(null);
+                                                handleDeleteField(field.id);
+                                              }}
+                                              className={`w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition-colors text-left text-red-500 hover:text-red-400 ${
+                                                isDark ? 'hover:bg-red-500/15' : 'hover:bg-red-50'
+                                              }`}
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                              <span>Delete</span>
+                                            </button>
+                                          </motion.div>
+                                        </>
+                                      )}
+                                    </AnimatePresence>
+                                  </div>
                                 </div>
                               </div>
 
@@ -992,6 +1613,82 @@ export function PassKeyDrawer({
                               >
                                 {displayVal}
                               </div>
+
+                              {/* Attached document or image for this field */}
+                              {(field.document || field.image) && (
+                                <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-dashed border-neutral-700/30">
+                                  {field.document && (
+                                    <div
+                                      onClick={() => {
+                                        triggerHaptic('light');
+                                        setPreviewDoc(field.document!);
+                                      }}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all active:scale-95 cursor-pointer ${
+                                        isDark
+                                          ? 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-500/20'
+                                          : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
+                                      }`}
+                                      title="Click to preview PDF document"
+                                    >
+                                      <FileText className="w-3 h-3 shrink-0 text-indigo-400" />
+                                      <span className="truncate max-w-[150px]">{field.document.name}</span>
+                                      <a
+                                        href={field.document.dataUrl}
+                                        download={field.document.name}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          triggerHaptic('selection');
+                                        }}
+                                        className={`p-0.5 rounded-md transition-colors ${
+                                          isDark
+                                            ? 'hover:bg-indigo-500/30 text-indigo-400 hover:text-indigo-200'
+                                            : 'hover:bg-indigo-200 text-indigo-600 hover:text-indigo-800'
+                                        }`}
+                                        title="Download document directly"
+                                      >
+                                        <Download className="w-3 h-3 shrink-0" />
+                                      </a>
+                                    </div>
+                                  )}
+                                  {field.image && (
+                                    <div
+                                      onClick={() => {
+                                        triggerHaptic('light');
+                                        setLightboxImg(field.image!);
+                                      }}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all active:scale-95 cursor-pointer ${
+                                        isDark
+                                          ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 ring-1 ring-sky-500/20'
+                                          : 'bg-sky-50 hover:bg-sky-100 text-sky-700 ring-1 ring-sky-200'
+                                      }`}
+                                      title="Click to preview image"
+                                    >
+                                      <img
+                                        src={field.image}
+                                        alt="Field attachment"
+                                        className="w-4 h-4 rounded object-cover"
+                                      />
+                                      <span>View Image</span>
+                                      <a
+                                        href={field.image}
+                                        download="attached_image.png"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          triggerHaptic('selection');
+                                        }}
+                                        className={`p-0.5 rounded-md transition-colors ${
+                                          isDark
+                                            ? 'hover:bg-sky-500/30 text-sky-400 hover:text-sky-200'
+                                            : 'hover:bg-sky-200 text-sky-600 hover:text-sky-800'
+                                        }`}
+                                        title="Download image directly"
+                                      >
+                                        <Download className="w-3 h-3 shrink-0" />
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1227,11 +1924,16 @@ export function PassKeyDrawer({
                       {attachedDocs.map((doc) => (
                         <div
                           key={doc.id}
-                          className={`p-3 rounded-2xl flex items-center justify-between transition-all ${
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setPreviewDoc(doc);
+                          }}
+                          className={`p-3 rounded-2xl flex items-center justify-between transition-all cursor-pointer ${
                             isDark
-                              ? 'bg-[#18181b]'
-                              : 'bg-neutral-100/80'
+                              ? 'bg-[#18181b] hover:bg-[#202024]'
+                              : 'bg-neutral-100/80 hover:bg-neutral-100'
                           }`}
+                          title="Click to preview document"
                         >
                           <div className="flex items-center gap-2.5 min-w-0 pr-2">
                             <div
@@ -1260,12 +1962,16 @@ export function PassKeyDrawer({
                           <a
                             href={doc.dataUrl}
                             download={doc.name}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('selection');
+                            }}
                             className={`h-7 px-2.5 rounded-lg flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all ${
                               isDark
                                 ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
                                 : 'bg-neutral-200 hover:bg-neutral-300 text-neutral-800'
                             }`}
-                            title="Download document"
+                            title="Download document directly"
                           >
                             <Download className="w-3.5 h-3.5" />
                             <span>Save</span>
@@ -1463,11 +2169,35 @@ export function PassKeyDrawer({
         )}
       </AnimatePresence>
 
+      {/* PDF / Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={!!previewDoc}
+        document={previewDoc}
+        theme={theme}
+        onClose={() => setPreviewDoc(null)}
+      />
+
       {/* Image Lightbox */}
       <ImageLightbox
         isOpen={!!lightboxImg}
         src={lightboxImg}
         onClose={() => setLightboxImg(null)}
+      />
+
+      {/* Global Hidden File Inputs for Personal Fields */}
+      <input
+        ref={fieldDocInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,.txt,application/pdf"
+        className="hidden"
+        onChange={handleFieldDocChange}
+      />
+      <input
+        ref={fieldImgInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFieldImgChange}
       />
     </>
   );

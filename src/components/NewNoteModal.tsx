@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, ChangeEvent, KeyboardEvent } from
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Check,
+  X,
   ChevronDown,
   BookOpen,
   KeyRound,
@@ -118,6 +119,13 @@ function createSampleAudioBlob(): Blob {
 const generateTodoId = () =>
   `todo-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
+const sanitizeEntryType = (t: unknown): EntryType => {
+  if (t === 'notes' || t === 'diary' || t === 'passwords' || t === 'todo') {
+    return t;
+  }
+  return 'notes';
+};
+
 export function NewNoteModal({
   isOpen,
   theme,
@@ -132,7 +140,7 @@ export function NewNoteModal({
   const isDark = theme === 'dark';
 
   // Entry type state (notes, diary, passwords, todo)
-  const [entryType, setEntryType] = useState<EntryType>(initialType);
+  const [entryType, setEntryType] = useState<EntryType>(() => sanitizeEntryType(initialType));
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
 
   // General fields
@@ -190,6 +198,18 @@ export function NewNoteModal({
   const recordingStartTimeRef = useRef<number>(0);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Reset or initialize when opened
   useEffect(() => {
@@ -329,7 +349,7 @@ export function NewNoteModal({
           }
         }
       } else {
-        setEntryType(initialType);
+        setEntryType(sanitizeEntryType(initialType));
         setTitle('');
         setContent('');
         setServiceName('');
@@ -1230,7 +1250,8 @@ export function NewNoteModal({
   };
 
   const isDesktop = useIsDesktop();
-  const ActiveIcon = typeConfig[entryType].icon;
+  const safeEntryType: EntryType = typeConfig[entryType] ? entryType : 'notes';
+  const ActiveIcon = typeConfig[safeEntryType].icon;
 
   return (
     <AnimatePresence>
@@ -1255,7 +1276,7 @@ export function NewNoteModal({
                 ? { duration: 0.18, ease: [0.16, 1, 0.3, 1] }
                 : { type: 'spring', damping: 30, stiffness: 340 }
             }
-            className={`relative w-full max-w-md md:max-w-xl mx-auto rounded-t-[28px] md:rounded-[28px] pt-2.5 md:pt-5 pb-5 px-5 md:px-7 shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh] overflow-hidden transition-colors ${
+            className={`relative w-full max-w-md md:max-w-xl mx-auto rounded-t-[28px] md:rounded-[28px] pt-2.5 md:pt-5 pb-5 px-5 md:px-7 shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh] md:min-h-[460px] overflow-hidden transition-colors ${
               isDark ? 'bg-[#121212] text-white' : 'bg-[#ffffff] text-neutral-900'
             }`}
           >
@@ -1284,13 +1305,13 @@ export function NewNoteModal({
                 >
                   <div
                     className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                      typeConfig[entryType].getBgClass(isDark)
+                      typeConfig[safeEntryType].getBgClass(isDark)
                     }`}
                   >
                     <ActiveIcon className="w-3.5 h-3.5 stroke-[2]" />
                   </div>
                   <span className="text-sm font-semibold tracking-tight">
-                    {typeConfig[entryType].label}
+                    {typeConfig[safeEntryType].label}
                   </span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 ${
@@ -1370,8 +1391,8 @@ export function NewNoteModal({
                 </AnimatePresence>
               </div>
 
-              {/* Right controls: ONLY Save button */}
-              <div className="flex items-center gap-2 relative">
+              {/* Right controls: Save button & Close button */}
+              <div className="flex items-center gap-1.5 sm:gap-2 relative">
                 {/* Save Button: High-contrast modern pill */}
                 <button
                   id="drawer-save-btn"
@@ -1386,6 +1407,22 @@ export function NewNoteModal({
                   <Check className="w-3.5 h-3.5 stroke-[2.4]" />
                   <span>{editingNote ? 'Update' : 'Save'}</span>
                 </button>
+
+                {/* Close Button: Explicit X button for desktop & mobile */}
+                <button
+                  id="drawer-close-btn"
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close modal"
+                  title="Close (Esc)"
+                  className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+                    isDark
+                      ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-black/5'
+                  }`}
+                >
+                  <X className="w-4 h-4 stroke-[2]" />
+                </button>
               </div>
             </div>
 
@@ -1395,7 +1432,7 @@ export function NewNoteModal({
                 isSuggestionsActive ? 'overflow-visible relative z-30' : 'overflow-y-auto'
               } no-scrollbar pt-1.5 ${
                 entryType === 'todo' ? 'pb-24' : 'pb-2'
-              } max-h-[55vh]`}
+              } max-h-[55vh] md:max-h-[62vh]`}
             >
               <AnimatePresence mode="wait">
                 {/* 1. DIARY FORMAT (Clean, elegant notepad) */}
