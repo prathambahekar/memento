@@ -60,7 +60,7 @@ export function AppearanceDrawer({
             </div>
 
             {/* Title Header */}
-            <div className="flex items-center justify-between pb-4 border-b mb-5 border-neutral-200/60 dark:border-neutral-800/60">
+            <div className="flex items-center justify-between pb-2 mb-4">
               <div className="flex items-center gap-3">
                 <div
                   className={`w-10 h-10 rounded-2xl flex items-center justify-center ${

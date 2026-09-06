@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useMemo, ChangeEvent, KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Check,
@@ -26,6 +26,7 @@ import {
   Shield,
   FileUp,
   Download,
+  PenLine,
 } from 'lucide-react';
 import {
   ThemeMode,
@@ -48,6 +49,7 @@ interface NewNoteModalProps {
   autoOpenKeyboard?: boolean;
   initialType?: EntryType;
   editingNote?: NoteItem | null;
+  existingNotes?: NoteItem[];
   onClose: () => void;
   onSaveNote: (
     title: string,
@@ -122,6 +124,7 @@ export function NewNoteModal({
   autoOpenKeyboard = true,
   initialType = 'notes',
   editingNote,
+  existingNotes = [],
   onClose,
   onSaveNote,
   onUpdateNote,
@@ -135,6 +138,10 @@ export function NewNoteModal({
   // General fields
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+
+  // Linked existing note (when user chooses an existing note/list from title suggestions)
+  const [linkedExistingNote, setLinkedExistingNote] = useState<NoteItem | null>(editingNote || null);
+  const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
 
   // Password / Key specific fields
   const [serviceName, setServiceName] = useState('');
@@ -169,6 +176,7 @@ export function NewNoteModal({
 
   const titleInputRef = useRef<HTMLInputElement>(null);
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const todoFloatingInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
@@ -339,6 +347,8 @@ export function NewNoteModal({
         setSafeSection('ids');
       }
 
+      setLinkedExistingNote(editingNote || null);
+      setShowTitleSuggestions(false);
       setNewTodoInput('');
       setIsPlusMenuOpen(false);
       setIsTypeDropdownOpen(false);
@@ -355,11 +365,89 @@ export function NewNoteModal({
 
       if (autoOpenKeyboard) {
         setTimeout(() => {
-          titleInputRef.current?.focus();
+          if (initialType === 'todo' && editingNote?.title) {
+            todoFloatingInputRef.current?.focus();
+          } else {
+            titleInputRef.current?.focus();
+          }
         }, 150);
       }
     }
   }, [isOpen, editingNote, initialType, autoOpenKeyboard]);
+
+  // Existing notes matching currently typed title or recent items for suggestion
+  const matchingExistingNotes = useMemo(() => {
+    if (!existingNotes || existingNotes.length === 0) return [];
+
+    const currentNoteId = linkedExistingNote?.id || editingNote?.id;
+
+    // Filter notes that correspond to current entryType
+    const relevant = existingNotes.filter((n) => {
+      if (!n || !n.title) return false;
+      if (currentNoteId && n.id === currentNoteId) return false;
+
+      if (entryType === 'todo') {
+        return n.isTodo || n.entryType === 'todo' || (n.todoItems && n.todoItems.length > 0);
+      }
+      if (entryType === 'passwords') {
+        return n.isSafe || n.isVault || n.entryType === 'passwords';
+      }
+      if (entryType === 'diary') {
+        return n.entryType === 'diary';
+      }
+      return !n.isTodo && !n.isSafe;
+    });
+
+    const query = title.trim().toLowerCase();
+    if (!query) {
+      // Return recent existing items
+      return relevant.slice(0, 4);
+    }
+
+    return relevant
+      .filter((n) => n.title.toLowerCase().includes(query))
+      .slice(0, 5);
+  }, [existingNotes, title, entryType, linkedExistingNote, editingNote]);
+
+  const isSuggestionsActive =
+    !linkedExistingNote && showTitleSuggestions && matchingExistingNotes.length > 0;
+
+  const handleSelectExistingNote = (note: NoteItem) => {
+    triggerHaptic('selection');
+    setLinkedExistingNote(note);
+    setTitle(note.title);
+
+    if (entryType === 'todo' || note.isTodo) {
+      const existingItems = parseTodoItemsFromNote(note);
+      // Merge with any items the user already typed into the modal so nothing is lost
+      const existingTexts = new Set(existingItems.map((it) => it.text.trim().toLowerCase()));
+      const unmerged = todoItems.filter(
+        (it) => !existingTexts.has(it.text.trim().toLowerCase())
+      );
+      setTodoItems([...existingItems, ...unmerged]);
+    } else {
+      if (note.content && !content) {
+        setContent(note.content);
+      }
+    }
+
+    setShowTitleSuggestions(false);
+
+    // Focus floating task input if in todo mode, or content input in other modes
+    setTimeout(() => {
+      if (entryType === 'todo') {
+        todoFloatingInputRef.current?.focus();
+      } else {
+        contentTextareaRef.current?.focus();
+      }
+    }, 120);
+  };
+
+  const handleUnlinkExistingNote = () => {
+    triggerHaptic('selection');
+    setLinkedExistingNote(null);
+    setShowTitleSuggestions(false);
+  };
 
   // Cleanup audio, recording & speech on unmount
   useEffect(() => {
@@ -417,32 +505,32 @@ export function NewNoteModal({
     }
   > = {
     notes: {
-      label: 'Quick Note',
+      label: 'Note',
       icon: Feather,
       placeholder: 'Standard scratchpad',
       desc: 'Simple note',
-      getBgClass: (dark) => (dark ? 'bg-sky-500/15 text-sky-300' : 'bg-sky-50 text-sky-600'),
+      getBgClass: (dark) => (dark ? 'bg-sky-500/15 text-sky-400' : 'bg-sky-50 text-sky-600'),
     },
     diary: {
       label: 'Diary',
       icon: BookOpen,
       placeholder: 'Diary reflections & notes',
       desc: 'Journaling & reflections',
-      getBgClass: (dark) => (dark ? 'bg-purple-500/15 text-purple-300' : 'bg-purple-50 text-purple-600'),
+      getBgClass: (dark) => (dark ? 'bg-purple-500/15 text-purple-400' : 'bg-purple-50 text-purple-600'),
     },
     passwords: {
-      label: 'Pass/Keys',
-      icon: KeyRound,
+      label: 'Safe',
+      icon: Shield,
       placeholder: 'Store logins, secrets & keys',
-      desc: 'Email, account & password',
-      getBgClass: (dark) => (dark ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-600'),
+      desc: 'Personal details, email & key',
+      getBgClass: (dark) => (dark ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'),
     },
     todo: {
       label: 'Todo',
       icon: ListTodo,
       placeholder: 'Tasks & checklist items',
       desc: 'Interactive action list',
-      getBgClass: (dark) => (dark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-50 text-emerald-600'),
+      getBgClass: (dark) => (dark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'),
     },
   };
 
@@ -457,6 +545,10 @@ export function NewNoteModal({
         },
       ]);
       setNewTodoInput('');
+      triggerHaptic('selection');
+      setTimeout(() => {
+        todoFloatingInputRef.current?.focus();
+      }, 50);
     }
   };
 
@@ -978,7 +1070,9 @@ export function NewNoteModal({
     const primaryVoiceDur = voiceNotes[0]?.duration || undefined;
     const primaryImageUrl = attachedImages[0] || undefined;
 
-    if (editingNote && onUpdateNote) {
+    const targetNote = linkedExistingNote || editingNote;
+
+    if (targetNote && onUpdateNote) {
       if (entryType === 'passwords') {
         finalTitle = capitalizeFirstChar(
           serviceName.trim() ||
@@ -996,7 +1090,7 @@ export function NewNoteModal({
         finalContent = lines.join('\n');
 
         onUpdateNote({
-          ...editingNote,
+          ...targetNote,
           title: finalTitle,
           content: finalContent,
           entryType: 'passwords',
@@ -1030,7 +1124,7 @@ export function NewNoteModal({
         finalContent = itemsList;
 
         onUpdateNote({
-          ...editingNote,
+          ...targetNote,
           title: finalTitle,
           content: finalContent,
           entryType: 'todo',
@@ -1047,7 +1141,7 @@ export function NewNoteModal({
       } else {
         finalTitle = capitalizeFirstChar(title.trim() || (entryType === 'diary' ? 'Diary Entry' : 'Untitled Note'));
         onUpdateNote({
-          ...editingNote,
+          ...targetNote,
           title: finalTitle,
           content: finalContent,
           entryType,
@@ -1174,115 +1268,110 @@ export function NewNoteModal({
               />
             </div>
 
-            {/* Header: Clean, borderless, NO split lines */}
+            {/* Header: Left interactive Dropdown Menu (Icon + Text) and Right Save button */}
             <div className="flex items-center justify-between py-1.5 relative z-30">
-              {/* Left: Mode Title badge */}
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                    typeConfig[entryType].getBgClass(isDark)
+              {/* Left: Interactive Dropdown Menu combining Icon + Text */}
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  id="entry-type-dropdown-btn"
+                  type="button"
+                  onClick={() => setIsTypeDropdownOpen((prev) => !prev)}
+                  className={`h-9 pl-1.5 pr-3 rounded-full flex items-center gap-2 active:scale-95 transition-all select-none ${
+                    isDark
+                      ? 'bg-[#1c1c1f] hover:bg-[#252529] text-white border border-neutral-800/80'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-900 border border-neutral-200/80'
                   }`}
                 >
-                  <ActiveIcon className="w-3.5 h-3.5 stroke-[2]" />
-                </div>
-                <span className="text-sm font-semibold tracking-tight">
-                  {typeConfig[entryType].label}
-                </span>
-              </div>
-
-              {/* Right controls: Dropdown Menu directly to the LEFT of Save button (NO close button) */}
-              <div className="flex items-center gap-2 relative">
-                {/* Dropdown Menu button to choose info type */}
-                <div className="relative" ref={dropdownRef}>
-                  <button
-                    id="entry-type-dropdown-btn"
-                    type="button"
-                    onClick={() => setIsTypeDropdownOpen((prev) => !prev)}
-                    className={`h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-medium active:scale-95 transition-all ${
-                      isDark
-                        ? 'bg-[#1e1e1e] hover:bg-[#282828] text-neutral-200'
-                        : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                      typeConfig[entryType].getBgClass(isDark)
                     }`}
                   >
-                    <span>{typeConfig[entryType].label}</span>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 ${
-                        isTypeDropdownOpen ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
+                    <ActiveIcon className="w-3.5 h-3.5 stroke-[2]" />
+                  </div>
+                  <span className="text-sm font-semibold tracking-tight">
+                    {typeConfig[entryType].label}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 ${
+                      isTypeDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-                  {/* Dropdown Menu popover: Sleek, pure neutral dark, borderless shadow */}
-                  <AnimatePresence>
-                    {isTypeDropdownOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                        transition={{ duration: 0.15 }}
-                        className={`absolute right-0 top-10 w-52 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 ${
-                          isDark
-                            ? 'bg-[#1c1c1c] text-white'
-                            : 'bg-white text-neutral-900 shadow-neutral-200/80'
+                {/* Backdrop to close format dropdown when tapping outside */}
+                {isTypeDropdownOpen && (
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsTypeDropdownOpen(false)}
+                  />
+                )}
+
+                {/* Dropdown Menu popover: Sleek, compact, minimal format selector opening on the left */}
+                <AnimatePresence>
+                  {isTypeDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                      transition={{ duration: 0.15 }}
+                      className={`absolute left-0 top-11 w-44 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 border backdrop-blur-xl ${
+                        isDark
+                          ? 'bg-[#1a1a1a]/95 border-neutral-800 text-white shadow-black/80'
+                          : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
+                      }`}
+                    >
+                      <div
+                        className={`text-[9.5px] font-semibold tracking-wider uppercase px-2.5 py-1 ${
+                          isDark ? 'text-neutral-500' : 'text-neutral-400'
                         }`}
                       >
-                        <div
-                          className={`text-[10px] font-semibold tracking-wider uppercase px-2.5 py-1 ${
-                            isDark ? 'text-neutral-500' : 'text-neutral-400'
-                          }`}
-                        >
-                          Select Format
-                        </div>
+                        Format
+                      </div>
 
-                        {(Object.keys(typeConfig) as EntryType[]).map((typeKey) => {
-                          const item = typeConfig[typeKey];
-                          const ItemIcon = item.icon;
-                          const isSelected = entryType === typeKey;
-                          return (
-                            <button
-                              key={typeKey}
-                              id={`select-type-${typeKey}`}
-                              type="button"
-                              onClick={() => {
-                                setEntryType(typeKey);
-                                setIsTypeDropdownOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
-                                isSelected
-                                  ? isDark
-                                    ? 'bg-[#282828] text-white font-medium'
-                                    : 'bg-neutral-100 text-neutral-900 font-semibold'
-                                  : isDark
-                                  ? 'hover:bg-[#242424] text-neutral-300'
-                                  : 'hover:bg-neutral-50 text-neutral-700'
+                      {(Object.keys(typeConfig) as EntryType[]).map((typeKey) => {
+                        const item = typeConfig[typeKey];
+                        const ItemIcon = item.icon;
+                        const isSelected = entryType === typeKey;
+                        return (
+                          <button
+                            key={typeKey}
+                            id={`select-type-${typeKey}`}
+                            type="button"
+                            onClick={() => {
+                              setEntryType(typeKey);
+                              setIsTypeDropdownOpen(false);
+                              triggerHaptic('selection');
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
+                              isSelected
+                                ? isDark
+                                  ? 'bg-[#262626] text-white font-medium'
+                                  : 'bg-neutral-100 text-neutral-900 font-semibold'
+                                : isDark
+                                ? 'hover:bg-[#222222] text-neutral-300'
+                                : 'hover:bg-neutral-50 text-neutral-700'
+                            }`}
+                          >
+                            <div
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                                item.getBgClass(isDark)
                               }`}
                             >
-                              <div
-                                className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-                                  item.getBgClass(isDark)
-                                }`}
-                              >
-                                <ItemIcon className="w-3.5 h-3.5" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="leading-tight">{item.label}</div>
-                                <div
-                                  className={`text-[10px] ${
-                                    isDark ? 'text-neutral-400' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  {item.desc}
-                                </div>
-                              </div>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-neutral-200" />}
-                            </button>
-                          );
-                        })}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                              <ItemIcon className="w-3.5 h-3.5 stroke-[2]" />
+                            </div>
+                            <span className="flex-1 text-xs truncate">{item.label}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-neutral-400 stroke-[2.5]" />}
+                          </button>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
+              {/* Right controls: ONLY Save button */}
+              <div className="flex items-center gap-2 relative">
                 {/* Save Button: High-contrast modern pill */}
                 <button
                   id="drawer-save-btn"
@@ -1301,7 +1390,13 @@ export function NewNoteModal({
             </div>
 
             {/* DYNAMIC BODY: Fluid and borderless (NO split lines anywhere) */}
-            <div className="flex-1 overflow-y-auto no-scrollbar pt-1.5 pb-2 max-h-[55vh]">
+            <div
+              className={`flex-1 ${
+                isSuggestionsActive ? 'overflow-visible relative z-30' : 'overflow-y-auto'
+              } no-scrollbar pt-1.5 ${
+                entryType === 'todo' ? 'pb-24' : 'pb-2'
+              } max-h-[55vh]`}
+            >
               <AnimatePresence mode="wait">
                 {/* 1. DIARY FORMAT (Clean, elegant notepad) */}
                 {entryType === 'diary' && (
@@ -1356,38 +1451,25 @@ export function NewNoteModal({
                     transition={{ duration: 0.15 }}
                     className="space-y-3"
                   >
-                    {/* Title */}
+                    {/* Card 1: TITLE */}
                     <div
-                      className={`p-3 rounded-2xl transition-colors ${
-                        isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
+                      className={`p-3.5 rounded-2xl transition-colors ${
+                        isDark ? 'bg-[#18181a]' : 'bg-neutral-100/80'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between mb-1.5">
                         <label
                           className={`text-[10px] font-semibold uppercase tracking-wider ${
                             isDark ? 'text-neutral-400' : 'text-neutral-500'
                           }`}
                         >
-                          Safe Item Title
+                          TITLE
                         </label>
-                        <button
-                          id="title-notes-btn"
-                          type="button"
-                          onClick={() => setShowSecretNotes((prev) => !prev)}
-                          title={showSecretNotes || secretNotes ? 'Note open (click to toggle)' : 'Add note'}
-                          aria-label="Add note to title"
-                          className={`w-6 h-6 rounded-lg flex items-center justify-center active:scale-95 transition-all ${
-                            showSecretNotes || secretNotes
-                              ? isDark
-                                ? 'bg-neutral-700 text-white'
-                                : 'bg-neutral-200 text-neutral-900'
-                              : isDark
-                              ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                              : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-200'
+                        <PenLine
+                          className={`w-3.5 h-3.5 ${
+                            isDark ? 'text-neutral-500' : 'text-neutral-400'
                           }`}
-                        >
-                          <Feather className="w-3.5 h-3.5" />
-                        </button>
+                        />
                       </div>
                       <input
                         ref={titleInputRef}
@@ -1398,438 +1480,194 @@ export function NewNoteModal({
                         spellCheck={false}
                         value={serviceName}
                         onChange={(e) => setServiceName(e.target.value)}
-                        placeholder="e.g. Identity & IDs, Google, SBI Bank"
-                        className={`w-full bg-transparent text-sm font-medium focus:outline-none placeholder:text-neutral-600 ${
+                        placeholder="e.g. Google, GitHub, Netflix"
+                        className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-500 ${
                           isDark ? 'text-white' : 'text-neutral-900'
                         }`}
                       />
-
-                      {/* Expandable note input if toggled or has notes */}
-                      <AnimatePresence>
-                        {(showSecretNotes || secretNotes) && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="mt-2.5 pt-1.5"
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span
-                                className={`text-[10px] font-semibold uppercase tracking-wider ${
-                                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                                }`}
-                              >
-                                Confidential Notes & Recovery Hints
-                              </span>
-                              {secretNotes && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSecretNotes('');
-                                    setShowSecretNotes(false);
-                                  }}
-                                  className="text-[10px] text-neutral-500 hover:text-red-400 transition-colors"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                            </div>
-                            <textarea
-                              value={secretNotes}
-                              onChange={(e) => setSecretNotes(e.target.value)}
-                              placeholder="Add recovery hints, emergency contacts, or confidential memos..."
-                              rows={2}
-                              autoFocus
-                              className={`w-full bg-transparent text-xs focus:outline-none resize-none leading-relaxed placeholder:text-neutral-600 ${
-                                isDark ? 'text-white' : 'text-neutral-900'
-                              }`}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
                     </div>
 
-                    {/* Segmented Section Switcher */}
+                    {/* Card 2: EMAIL OR USERNAME */}
                     <div
-                      className={`p-1 rounded-2xl flex items-center gap-1 ${
-                        isDark ? 'bg-[#181818]' : 'bg-neutral-200/60'
+                      className={`p-3.5 rounded-2xl transition-colors ${
+                        isDark ? 'bg-[#18181a]' : 'bg-neutral-100/80'
                       }`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('selection');
-                          setSafeSection('ids');
-                        }}
-                        className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                          safeSection === 'ids'
-                            ? isDark
-                              ? 'bg-neutral-800 text-white shadow-xs'
-                              : 'bg-white text-neutral-900 shadow-xs'
-                            : isDark
-                            ? 'text-neutral-400 hover:text-neutral-200'
-                            : 'text-neutral-600 hover:text-neutral-900'
-                        }`}
-                      >
-                        <Shield className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Personal IDs & Info</span>
-                        {personalInfoFields.length > 0 && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400">
-                            {personalInfoFields.length}
-                          </span>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('selection');
-                          setSafeSection('credentials');
-                        }}
-                        className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                          safeSection === 'credentials'
-                            ? isDark
-                              ? 'bg-neutral-800 text-white shadow-xs'
-                              : 'bg-white text-neutral-900 shadow-xs'
-                            : isDark
-                            ? 'text-neutral-400 hover:text-neutral-200'
-                            : 'text-neutral-600 hover:text-neutral-900'
-                        }`}
-                      >
-                        <KeyRound className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Password & Login</span>
-                      </button>
-                    </div>
-
-                    {/* Section Content: Personal IDs & Info */}
-                    {safeSection === 'ids' && (
-                      <div className="space-y-2.5">
-                        {/* Preset Quick Add Chips */}
-                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                          <button
-                            type="button"
-                            onClick={() => handleAddPersonalInfoField('Aadhaar Card', '', true)}
-                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
-                              isDark
-                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
-                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                            }`}
-                          >
-                            <CreditCard className="w-3 h-3 text-emerald-400" />
-                            <span>+ Aadhaar</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAddPersonalInfoField('PAN Card', '', false)}
-                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
-                              isDark
-                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
-                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                            }`}
-                          >
-                            <CreditCard className="w-3 h-3 text-blue-400" />
-                            <span>+ PAN Card</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAddPersonalInfoField('Phone Number', '', false)}
-                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
-                              isDark
-                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
-                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                            }`}
-                          >
-                            <Phone className="w-3 h-3 text-amber-400" />
-                            <span>+ Phone</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAddPersonalInfoField('Custom ID', '', false)}
-                            className={`h-7 px-2.5 rounded-full flex items-center gap-1 text-[11px] font-medium shrink-0 active:scale-95 transition-all border ${
-                              isDark
-                                ? 'bg-[#181818] border-neutral-800 text-neutral-300 hover:border-neutral-700'
-                                : 'bg-white border-neutral-200 text-neutral-700 hover:border-neutral-300'
-                            }`}
-                          >
-                            <Plus className="w-3 h-3 text-neutral-400" />
-                            <span>+ Custom Field</span>
-                          </button>
-                        </div>
-
-                        {/* List of Personal Info Fields */}
-                        {personalInfoFields.length > 0 ? (
-                          <div className="space-y-2">
-                            {personalInfoFields.map((field) => {
-                              const isPan = field.label.toLowerCase().includes('pan');
-                              const isAadhaar = field.label.toLowerCase().includes('aadhaar');
-                              const isPhone =
-                                field.label.toLowerCase().includes('phone') ||
-                                field.label.toLowerCase().includes('mobile');
-
-                              return (
-                                <div
-                                  key={field.id}
-                                  className={`p-2.5 sm:p-3 rounded-2xl border transition-colors ${
-                                    isDark
-                                      ? 'bg-[#181818] border-neutral-800'
-                                      : 'bg-white border-neutral-200 shadow-xs'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <input
-                                      type="text"
-                                      value={field.label}
-                                      onChange={(e) =>
-                                        handleUpdatePersonalInfoField(field.id, {
-                                          label: e.target.value,
-                                        })
-                                      }
-                                      placeholder="Field Label (e.g. Aadhaar)"
-                                      className={`text-[11px] font-semibold uppercase tracking-wider bg-transparent focus:outline-none ${
-                                        isDark ? 'text-neutral-400' : 'text-neutral-500'
-                                      }`}
-                                    />
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          triggerHaptic('light');
-                                          handleUpdatePersonalInfoField(field.id, {
-                                            isMasked: !field.isMasked,
-                                          });
-                                        }}
-                                        className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${
-                                          field.isMasked
-                                            ? isDark
-                                              ? 'bg-neutral-800 text-emerald-400'
-                                              : 'bg-neutral-100 text-emerald-600'
-                                            : isDark
-                                            ? 'text-neutral-400 hover:text-white'
-                                            : 'text-neutral-500 hover:text-neutral-900'
-                                        }`}
-                                        title={field.isMasked ? 'Masked on card' : 'Unmasked'}
-                                      >
-                                        {field.isMasked ? (
-                                          <EyeOff className="w-3.5 h-3.5" />
-                                        ) : (
-                                          <Eye className="w-3.5 h-3.5" />
-                                        )}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemovePersonalInfoField(field.id)}
-                                        className="w-6 h-6 rounded-md flex items-center justify-center text-neutral-400 hover:text-red-400 transition-colors"
-                                        title="Delete field"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  <input
-                                    type={field.isMasked ? 'password' : 'text'}
-                                    value={field.value}
-                                    onChange={(e) => {
-                                      let val = e.target.value;
-                                      if (isPan) val = val.toUpperCase();
-                                      handleUpdatePersonalInfoField(field.id, { value: val });
-                                    }}
-                                    placeholder={
-                                      isAadhaar
-                                        ? '12-digit number (e.g. 5423 8812 3491)'
-                                        : isPan
-                                        ? '10-character code (e.g. BZAPA1234K)'
-                                        : isPhone
-                                        ? '+91 98765 43210'
-                                        : 'Enter value'
-                                    }
-                                    className={`w-full bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-600 ${
-                                      isDark ? 'text-white' : 'text-neutral-900'
-                                    }`}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div
-                            className={`p-3.5 rounded-2xl border text-center ${
-                              isDark
-                                ? 'bg-[#141414] border-neutral-800/80 text-neutral-400'
-                                : 'bg-white border-neutral-200 text-neutral-500'
-                            }`}
-                          >
-                            <p className="text-xs mb-1 font-medium">No personal identifiers added</p>
-                            <p className="text-[11px] text-neutral-500">
-                              Tap the chips above to securely store your Aadhaar Number, PAN Card, or Phone Number.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Section Content: Credentials (Email & Password) */}
-                    {safeSection === 'credentials' && (
-                      <div className="space-y-2.5">
-                        {/* Email / Username */}
-                        <div
-                          className={`p-3 rounded-2xl transition-colors ${
-                            isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
-                          }`}
-                        >
-                          <label
-                            className={`block text-[10px] font-semibold uppercase tracking-wider mb-1 ${
-                              isDark ? 'text-neutral-400' : 'text-neutral-500'
-                            }`}
-                          >
-                            Email or Username
-                          </label>
-                          <input
-                            type="text"
-                            name="memento_vault_username"
-                            autoComplete="off"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            value={emailUsername}
-                            onChange={(e) => setEmailUsername(e.target.value)}
-                            placeholder="user@example.com or username"
-                            className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-600 ${
-                              isDark ? 'text-white' : 'text-neutral-900'
-                            }`}
-                          />
-                        </div>
-
-                        {/* Password / Key with Show/Hide toggle */}
-                        <div
-                          className={`p-3 rounded-2xl transition-colors ${
-                            isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100/80'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <label
-                              className={`text-[10px] font-semibold uppercase tracking-wider ${
-                                isDark ? 'text-neutral-400' : 'text-neutral-500'
-                              }`}
-                            >
-                              Password / Key
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const chars =
-                                  'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
-                                let pass = '';
-                                for (let i = 0; i < 14; i++) {
-                                  pass += chars.charAt(Math.floor(Math.random() * chars.length));
-                                }
-                                setPasswordValue(pass);
-                                setShowPassword(true);
-                              }}
-                              className={`text-[11px] font-medium flex items-center gap-1 hover:underline ${
-                                isDark ? 'text-neutral-300' : 'text-neutral-700'
-                              }`}
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              <span>Generate</span>
-                            </button>
-                          </div>
-
-                          <div className="relative flex items-center">
-                            <input
-                              type={showPassword ? 'text' : 'password'}
-                              name="memento_vault_password"
-                              autoComplete="new-password"
-                              autoCorrect="off"
-                              spellCheck={false}
-                              value={passwordValue}
-                              onChange={(e) => setPasswordValue(e.target.value)}
-                              placeholder="Secret key or password"
-                              className={`w-full pr-8 bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-600 ${
-                                isDark ? 'text-white' : 'text-neutral-900'
-                              }`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword((prev) => !prev)}
-                              className={`p-1 rounded-md transition-colors ${
-                                isDark
-                                  ? 'text-neutral-400 hover:text-white'
-                                  : 'text-neutral-500 hover:text-neutral-900'
-                              }`}
-                            >
-                              {showPassword ? (
-                                <EyeOff className="w-4 h-4" />
-                              ) : (
-                                <Eye className="w-4 h-4" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Quick Media Attachments Bar */}
-                    <div
-                      className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 ${
-                        isDark ? 'bg-[#141414] border-neutral-800/80' : 'bg-white border-neutral-200'
-                      }`}
-                    >
-                      <span
-                        className={`text-[11px] font-medium ${
+                      <label
+                        className={`block text-[10px] font-semibold uppercase tracking-wider mb-1.5 ${
                           isDark ? 'text-neutral-400' : 'text-neutral-500'
                         }`}
                       >
-                        Safe Attachments:
-                      </span>
-                      <div className="flex items-center gap-1.5">
+                        EMAIL OR USERNAME
+                      </label>
+                      <input
+                        type="text"
+                        name="memento_vault_username"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        value={emailUsername}
+                        onChange={(e) => setEmailUsername(e.target.value)}
+                        placeholder="user@example.com or username"
+                        className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-500 ${
+                          isDark ? 'text-white' : 'text-neutral-900'
+                        }`}
+                      />
+                    </div>
+
+                    {/* Card 3: PASSWORD / KEY */}
+                    <div
+                      className={`p-3.5 rounded-2xl transition-colors ${
+                        isDark ? 'bg-[#18181a]' : 'bg-neutral-100/80'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label
+                          className={`text-[10px] font-semibold uppercase tracking-wider ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-500'
+                          }`}
+                        >
+                          PASSWORD / KEY
+                        </label>
                         <button
                           type="button"
                           onClick={() => {
-                            triggerHaptic('selection');
-                            docInputRef.current?.click();
+                            const chars =
+                              'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
+                            let pass = '';
+                            for (let i = 0; i < 14; i++) {
+                              pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                            }
+                            setPasswordValue(pass);
+                            setShowPassword(true);
+                            triggerHaptic('light');
                           }}
-                          className={`h-7 px-2 rounded-xl flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
+                          className={`text-[11px] font-medium flex items-center gap-1.5 transition-colors ${
                             isDark
-                              ? 'bg-neutral-800 text-indigo-300 hover:bg-neutral-700'
-                              : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                              ? 'text-neutral-300 hover:text-white'
+                              : 'text-neutral-700 hover:text-neutral-900'
                           }`}
                         >
-                          <FileText className="w-3 h-3" />
-                          <span>Doc</span>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Generate</span>
                         </button>
+                      </div>
 
+                      <div className="relative flex items-center">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          name="memento_vault_password"
+                          autoComplete="new-password"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          value={passwordValue}
+                          onChange={(e) => setPasswordValue(e.target.value)}
+                          placeholder="Secret key or password"
+                          className={`w-full pr-8 bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-500 ${
+                            isDark ? 'text-white' : 'text-neutral-900'
+                          }`}
+                        />
                         <button
                           type="button"
                           onClick={() => {
-                            triggerHaptic('selection');
-                            fileInputRef.current?.click();
+                            setShowPassword((prev) => !prev);
+                            triggerHaptic('light');
                           }}
-                          className={`h-7 px-2 rounded-xl flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
+                          className={`p-1 rounded-md transition-colors ${
                             isDark
-                              ? 'bg-neutral-800 text-sky-300 hover:bg-neutral-700'
-                              : 'bg-sky-50 text-sky-600 hover:bg-sky-100'
+                              ? 'text-neutral-400 hover:text-white'
+                              : 'text-neutral-500 hover:text-neutral-900'
                           }`}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
                         >
-                          <ImageIcon className="w-3 h-3" />
-                          <span>Photo</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => startVoiceRecording()}
-                          className={`h-7 px-2 rounded-xl flex items-center gap-1 text-[11px] font-medium active:scale-95 transition-all ${
-                            isDark
-                              ? 'bg-neutral-800 text-rose-300 hover:bg-neutral-700'
-                              : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                          }`}
-                        >
-                          <Mic className="w-3 h-3" />
-                          <span>Voice</span>
+                          {showPassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
                     </div>
+
+                      {/* Custom Personal Identifier Fields if any */}
+                      {personalInfoFields.length > 0 && (
+                        <div className="space-y-2 pt-1">
+                          {personalInfoFields.map((field) => (
+                            <div
+                              key={field.id}
+                              className={`p-2.5 sm:p-3 rounded-2xl border transition-colors ${
+                                isDark
+                                  ? 'bg-[#18181a] border-neutral-800'
+                                  : 'bg-white border-neutral-200 shadow-xs'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <input
+                                  type="text"
+                                  value={field.label}
+                                  onChange={(e) =>
+                                    handleUpdatePersonalInfoField(field.id, {
+                                      label: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Field Name"
+                                  className={`text-[10.5px] font-semibold uppercase tracking-wider bg-transparent focus:outline-none ${
+                                    isDark ? 'text-neutral-400' : 'text-neutral-500'
+                                  }`}
+                                />
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      triggerHaptic('light');
+                                      handleUpdatePersonalInfoField(field.id, {
+                                        isMasked: !field.isMasked,
+                                      });
+                                    }}
+                                    className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${
+                                      field.isMasked
+                                        ? isDark
+                                          ? 'bg-neutral-800 text-emerald-400'
+                                          : 'bg-neutral-100 text-emerald-600'
+                                        : isDark
+                                        ? 'text-neutral-400 hover:text-white'
+                                        : 'text-neutral-500 hover:text-neutral-900'
+                                    }`}
+                                    title={field.isMasked ? 'Masked' : 'Visible'}
+                                  >
+                                    {field.isMasked ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemovePersonalInfoField(field.id)}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-neutral-400 hover:text-red-400 transition-colors"
+                                    title="Delete field"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <input
+                                type={field.isMasked ? 'password' : 'text'}
+                                value={field.value}
+                                onChange={(e) =>
+                                  handleUpdatePersonalInfoField(field.id, { value: e.target.value })
+                                }
+                                placeholder="Value"
+                                className={`w-full bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-500 ${
+                                  isDark ? 'text-white' : 'text-neutral-900'
+                                }`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                   </motion.div>
                 )}
 
@@ -1843,110 +1681,163 @@ export function NewNoteModal({
                     transition={{ duration: 0.15 }}
                     className="space-y-3"
                   >
-                    <input
-                      ref={titleInputRef}
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Todo List Title..."
-                      className={`w-full bg-transparent text-xl font-bold tracking-tight placeholder:text-neutral-600 focus:outline-none ${
-                        isDark ? 'text-white' : 'text-neutral-900'
-                      }`}
-                    />
-
-                    {/* Quick item input capsule */}
-                    <div
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl transition-colors ${
-                        isDark ? 'bg-[#1a1a1a]' : 'bg-neutral-100'
-                      }`}
-                    >
+                    <div className={`relative ${isSuggestionsActive ? 'z-40' : ''}`}>
                       <input
+                        ref={titleInputRef}
                         type="text"
-                        value={newTodoInput}
-                        onChange={(e) => setNewTodoInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddTodoItem();
-                          }
+                        value={title}
+                        onChange={(e) => {
+                          setTitle(e.target.value);
+                          setShowTitleSuggestions(true);
                         }}
-                        placeholder="Add task & enter..."
-                        className={`flex-1 bg-transparent text-sm focus:outline-none placeholder:text-neutral-600 ${
+                        onFocus={() => setShowTitleSuggestions(true)}
+                        onBlur={() => {
+                          setTimeout(() => setShowTitleSuggestions(false), 220);
+                        }}
+                        placeholder="Todo List Title..."
+                        className={`w-full bg-transparent text-xl font-bold tracking-tight placeholder:text-neutral-600 focus:outline-none ${
                           isDark ? 'text-white' : 'text-neutral-900'
                         }`}
                       />
-                      <button
-                        type="button"
-                        onClick={handleAddTodoItem}
-                        className={`h-7 px-3 rounded-full flex items-center gap-1 text-xs font-medium active:scale-95 transition-all ${
-                          isDark
-                            ? 'bg-[#282828] text-white hover:bg-[#323232]'
-                            : 'bg-neutral-200 text-neutral-800 hover:bg-neutral-300'
-                        }`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add</span>
-                      </button>
+
+                      {/* Linked existing list indicator badge */}
+                      {linkedExistingNote && (
+                        <div className="flex items-center gap-1.5 pt-1.5 text-[11px] text-neutral-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          <span className="truncate">
+                            Adding to list: <strong className={isDark ? 'text-white font-medium' : 'text-neutral-900 font-semibold'}>{linkedExistingNote.title}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleUnlinkExistingNote}
+                            className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-md transition-colors ${
+                              isDark ? 'bg-neutral-800 text-neutral-400 hover:text-white' : 'bg-neutral-200 text-neutral-600 hover:text-neutral-900'
+                            }`}
+                          >
+                            New list
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Suggestions popover for existing lists */}
+                      <AnimatePresence>
+                        {!linkedExistingNote && showTitleSuggestions && matchingExistingNotes.length > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 2, scale: 0.98 }}
+                            transition={{ duration: 0.15 }}
+                            className={`absolute left-0 right-0 top-full mt-1.5 rounded-2xl p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.6)] border backdrop-blur-xl z-50 ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-neutral-200 shadow-black/70'
+                                : 'bg-white border-neutral-200 text-neutral-800 shadow-neutral-300/80'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                              <span>{title.trim() ? 'Matching existing lists' : 'Existing lists'}</span>
+                              <span className="text-[9px] text-neutral-500 lowercase font-normal">Tap to add tasks to it</span>
+                            </div>
+                            <div className="space-y-0.5 mt-0.5 max-h-40 overflow-y-auto no-scrollbar">
+                              {matchingExistingNotes.map((note) => {
+                                const count = note.todoItems?.length ?? parseTodoItemsFromNote(note).length;
+                                return (
+                                  <button
+                                    key={`exist-todo-${note.id}`}
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      handleSelectExistingNote(note);
+                                    }}
+                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
+                                      isDark
+                                        ? 'hover:bg-[#252525] text-neutral-200 hover:text-white'
+                                        : 'hover:bg-neutral-100 text-neutral-800'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                                        isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
+                                      }`}>
+                                        <ListTodo className="w-3 h-3" />
+                                      </div>
+                                      <span className="truncate font-medium">{note.title}</span>
+                                    </div>
+                                    <span className="text-[10px] text-neutral-400 shrink-0 ml-2">
+                                      {count > 0 ? `${count} ${count === 1 ? 'task' : 'tasks'}` : 'Empty list'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Todo List Items (No split lines) */}
                     <div className="space-y-1.5 pt-1">
                       {todoItems.length === 0 ? (
-                        <p className="text-xs py-3 text-center text-neutral-500">
-                          No items yet. Type above to add tasks.
+                        <p className="text-xs py-4 text-center text-neutral-500">
+                          No items yet. Type below to add tasks.
                         </p>
                       ) : (
-                        todoItems.map((item) => (
-                          <div
-                            key={`modal-todo-${item.id}`}
-                            className={`flex items-center justify-between p-2.5 rounded-2xl transition-all ${
-                              isDark
-                                ? 'bg-[#181818] hover:bg-[#202020]'
-                                : 'bg-neutral-100/70 hover:bg-neutral-100'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => handleToggleTodoItem(item.id)}
-                              className="flex items-center gap-3 flex-1 text-left select-none"
+                        <AnimatePresence initial={false}>
+                          {todoItems.map((item) => (
+                            <motion.div
+                              key={`modal-todo-${item.id}`}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                              transition={{ duration: 0.18 }}
+                              className={`flex items-center justify-between p-2.5 rounded-2xl transition-all ${
+                                isDark
+                                  ? 'bg-[#181818] hover:bg-[#202020]'
+                                  : 'bg-neutral-100/70 hover:bg-neutral-100'
+                              }`}
                             >
-                              <div
-                                className={`w-4 h-4 rounded-md flex items-center justify-center transition-colors ${
-                                  item.completed
-                                    ? isDark
-                                      ? 'bg-white text-black'
-                                      : 'bg-neutral-900 text-white'
-                                    : isDark
-                                    ? 'bg-[#282828]'
-                                    : 'bg-neutral-300'
-                                }`}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleTodoItem(item.id)}
+                                className="flex items-center gap-3 flex-1 text-left select-none"
                               >
-                                {item.completed && (
-                                  <Check className="w-3 h-3 stroke-[3]" />
-                                )}
-                              </div>
-                              <span
-                                className={`text-xs ${
-                                  item.completed
-                                    ? 'line-through text-neutral-500'
-                                    : isDark
-                                    ? 'text-neutral-200'
-                                    : 'text-neutral-800'
-                                }`}
-                              >
-                                {item.text}
-                              </span>
-                            </button>
+                                <div
+                                  className={`w-4 h-4 rounded-md flex items-center justify-center transition-colors ${
+                                    item.completed
+                                      ? isDark
+                                        ? 'bg-white text-black'
+                                        : 'bg-neutral-900 text-white'
+                                      : isDark
+                                      ? 'bg-[#282828]'
+                                      : 'bg-neutral-300'
+                                  }`}
+                                >
+                                  {item.completed && (
+                                    <Check className="w-3 h-3 stroke-[3]" />
+                                  )}
+                                </div>
+                                <span
+                                  className={`text-xs ${
+                                    item.completed
+                                      ? 'line-through text-neutral-500'
+                                      : isDark
+                                      ? 'text-neutral-200'
+                                      : 'text-neutral-800'
+                                  }`}
+                                >
+                                  {item.text}
+                                </span>
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTodoItem(item.id)}
-                              className="p-1 rounded-lg text-neutral-500 hover:text-red-400 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTodoItem(item.id)}
+                                className="p-1 rounded-lg text-neutral-500 hover:text-red-400 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       )}
                     </div>
                   </motion.div>
@@ -1962,16 +1853,92 @@ export function NewNoteModal({
                     transition={{ duration: 0.15 }}
                     className="space-y-3"
                   >
-                    <input
-                      ref={titleInputRef}
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Title..."
-                      className={`w-full bg-transparent text-xl font-bold tracking-tight placeholder:text-neutral-600 focus:outline-none ${
-                        isDark ? 'text-white' : 'text-neutral-900'
-                      }`}
-                    />
+                    <div className={`relative ${isSuggestionsActive ? 'z-40' : ''}`}>
+                      <input
+                        ref={titleInputRef}
+                        type="text"
+                        value={title}
+                        onChange={(e) => {
+                          setTitle(e.target.value);
+                          setShowTitleSuggestions(true);
+                        }}
+                        onFocus={() => setShowTitleSuggestions(true)}
+                        onBlur={() => {
+                          setTimeout(() => setShowTitleSuggestions(false), 220);
+                        }}
+                        placeholder="Title..."
+                        className={`w-full bg-transparent text-xl font-bold tracking-tight placeholder:text-neutral-600 focus:outline-none ${
+                          isDark ? 'text-white' : 'text-neutral-900'
+                        }`}
+                      />
+
+                      {/* Linked existing note badge */}
+                      {linkedExistingNote && (
+                        <div className="flex items-center gap-1.5 pt-1.5 text-[11px] text-neutral-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
+                          <span className="truncate">
+                            Editing note: <strong className={isDark ? 'text-white font-medium' : 'text-neutral-900 font-semibold'}>{linkedExistingNote.title}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleUnlinkExistingNote}
+                            className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-md transition-colors ${
+                              isDark ? 'bg-neutral-800 text-neutral-400 hover:text-white' : 'bg-neutral-200 text-neutral-600 hover:text-neutral-900'
+                            }`}
+                          >
+                            New note
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Suggestions popover for existing notes */}
+                      <AnimatePresence>
+                        {!linkedExistingNote && showTitleSuggestions && matchingExistingNotes.length > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 2, scale: 0.98 }}
+                            transition={{ duration: 0.15 }}
+                            className={`absolute left-0 right-0 top-full mt-1.5 rounded-2xl p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.6)] border backdrop-blur-xl z-50 ${
+                              isDark
+                                ? 'bg-[#181818] border-neutral-800 text-neutral-200 shadow-black/70'
+                                : 'bg-white border-neutral-200 text-neutral-800 shadow-neutral-300/80'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                              <span>{title.trim() ? 'Matching existing notes' : 'Existing notes'}</span>
+                              <span className="text-[9px] text-neutral-500 lowercase font-normal">Tap to edit</span>
+                            </div>
+                            <div className="space-y-0.5 mt-0.5 max-h-40 overflow-y-auto no-scrollbar">
+                              {matchingExistingNotes.map((note) => (
+                                <button
+                                  key={`exist-note-${note.id}`}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelectExistingNote(note);
+                                  }}
+                                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition-colors ${
+                                    isDark
+                                      ? 'hover:bg-[#252525] text-neutral-200 hover:text-white'
+                                      : 'hover:bg-neutral-100 text-neutral-800'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                                      isDark ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-50 text-sky-600'
+                                    }`}>
+                                      <FileText className="w-3 h-3" />
+                                    </div>
+                                    <span className="truncate font-medium">{note.title}</span>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                     <textarea
                       ref={contentTextareaRef}
                       value={content}
@@ -2337,7 +2304,9 @@ export function NewNoteModal({
             />
 
             {/* FLOATING ACTION / SUB-MENU NAV BAR */}
-            <div className="pt-3 pb-1 flex flex-col items-center justify-center relative">
+            <div className={`pt-3 pb-1 flex flex-col items-center justify-center relative ${
+              isPlusMenuOpen ? 'z-40' : 'z-10'
+            }`}>
               {/* Speech-to-text dictation status notification pill */}
               <AnimatePresence>
                 {isListeningSpeech && (
@@ -2373,26 +2342,31 @@ export function NewNoteModal({
 
               {/* '+' Popup Menu for options like photo, timestamp, checklist, voice note */}
               <AnimatePresence>
-                {isPlusMenuOpen && (
-                  <motion.div
-                    ref={plusMenuRef}
-                    initial={{ opacity: 0, y: 10, scale: 0.94 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.94 }}
-                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                    className={`absolute bottom-16 w-56 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 border backdrop-blur-2xl ${
-                      isDark
-                        ? 'bg-[#181818]/95 border-neutral-800 text-white shadow-black/60'
-                        : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
-                    }`}
-                  >
+                {isPlusMenuOpen && entryType !== 'todo' && (
+                  <>
                     <div
-                      className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 ${
-                        isDark ? 'text-neutral-500' : 'text-neutral-400'
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsPlusMenuOpen(false)}
+                    />
+                    <motion.div
+                      ref={plusMenuRef}
+                      initial={{ opacity: 0, y: 10, scale: 0.94 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.94 }}
+                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                      className={`absolute bottom-16 w-52 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 border backdrop-blur-2xl ${
+                        isDark
+                          ? 'bg-[#181818]/95 border-neutral-800 text-white shadow-black/60'
+                          : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
                       }`}
                     >
-                      Insert & Media
-                    </div>
+                      <div
+                        className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 ${
+                          isDark ? 'text-neutral-500' : 'text-neutral-400'
+                        }`}
+                      >
+                        Insert & Media
+                      </div>
 
                     {/* Attach Photo option */}
                     <button
@@ -2512,54 +2486,107 @@ export function NewNoteModal({
                       <span className="font-medium">Record Voice Note</span>
                     </button>
                   </motion.div>
-                )}
-              </AnimatePresence>
+                </>
+              )}
+            </AnimatePresence>
 
-              {/* Floating Action Bar Pill */}
-              <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-2xl shadow-[0_8px_24px_rgba(0,0,0,0.3)] border transition-all ${
-                  isDark
-                    ? 'bg-[#181818]/95 border-neutral-800 text-white shadow-black/40'
-                    : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
-                }`}
-              >
-                {/* '+' button showing sub menu */}
-                <button
-                  ref={plusBtnRef}
-                  id="drawer-plus-btn"
-                  type="button"
-                  onClick={() => {
+            {/* Floating Action Bar Pill */}
+            <motion.div
+              layout
+              transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full backdrop-blur-2xl shadow-[0_8px_24px_rgba(0,0,0,0.3)] border transition-all ${
+                entryType === 'todo'
+                  ? 'w-full max-w-sm sm:max-w-md mx-auto'
+                  : 'w-auto'
+              } ${
+                isDark
+                  ? 'bg-[#181818]/95 border-neutral-800 text-white shadow-black/40'
+                  : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
+              }`}
+            >
+              {/* '+' button: adds task in Todo mode, or toggles options menu in other modes */}
+              <button
+                ref={plusBtnRef}
+                id="drawer-plus-btn"
+                type="button"
+                onClick={() => {
+                  if (entryType === 'todo') {
+                    if (newTodoInput.trim()) {
+                      handleAddTodoItem();
+                    } else {
+                      triggerHaptic('selection');
+                      todoFloatingInputRef.current?.focus();
+                    }
+                  } else {
                     triggerHaptic('selection');
                     setIsPlusMenuOpen((prev) => !prev);
-                  }}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
-                    isPlusMenuOpen
+                  }
+                }}
+                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-all ${
+                  entryType === 'todo'
+                    ? newTodoInput.trim()
                       ? isDark
-                        ? 'bg-white text-black rotate-45'
-                        : 'bg-neutral-900 text-white rotate-45'
+                        ? 'bg-white text-black shadow-xs hover:bg-neutral-200'
+                        : 'bg-neutral-900 text-white shadow-xs hover:bg-neutral-800'
                       : isDark
-                      ? 'bg-[#262626] hover:bg-[#303030] text-neutral-200 hover:text-white'
-                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
-                  }`}
-                  aria-label="Add options menu"
-                  title="Insert & Media menu"
-                >
-                  <Plus className="w-4 h-4 transition-transform duration-200" />
-                </button>
+                      ? 'bg-[#262626] hover:bg-[#303030] text-neutral-300'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                    : isPlusMenuOpen
+                    ? isDark
+                      ? 'bg-white text-black rotate-45'
+                      : 'bg-neutral-900 text-white rotate-45'
+                    : isDark
+                    ? 'bg-[#262626] hover:bg-[#303030] text-neutral-200 hover:text-white'
+                    : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
+                }`}
+                aria-label={entryType === 'todo' ? "Add task" : "Add options menu"}
+                title={entryType === 'todo' ? "Add task" : "Insert & Media menu"}
+              >
+                <Plus className="w-4 h-4 transition-transform duration-200" />
+              </button>
 
-                {/* Subtle vertical divider */}
-                <div
-                  className={`w-[1px] h-4 rounded-full ${
-                    isDark ? 'bg-neutral-800' : 'bg-neutral-200'
-                  }`}
-                />
+                {/* Animated task input text box between '+' and 'mic' for Todo drawer */}
+                {entryType === 'todo' ? (
+                  <motion.div
+                    key="todo-task-floating-input"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="flex-1 min-w-0 flex items-center"
+                  >
+                    <input
+                      ref={todoFloatingInputRef}
+                      type="text"
+                      value={newTodoInput}
+                      onChange={(e) => setNewTodoInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddTodoItem();
+                        }
+                      }}
+                      placeholder="Add task & enter..."
+                      className={`w-full bg-transparent text-sm font-medium px-2 py-1 outline-none placeholder:text-neutral-500 ${
+                        isDark ? 'text-white' : 'text-neutral-900'
+                      }`}
+                    />
+                  </motion.div>
+                ) : (
+                  /* Subtle vertical divider for other types */
+                  <div
+                    className={`w-[1px] h-4 rounded-full ${
+                      isDark ? 'bg-neutral-800' : 'bg-neutral-200'
+                    }`}
+                  />
+                )}
 
                 {/* Mic button: Speech-to-Text Dictation */}
                 <button
                   id="drawer-mic-btn"
                   type="button"
                   onClick={handleToggleSpeechToText}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                  className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-all ${
                     isListeningSpeech
                       ? 'bg-emerald-500 text-white animate-pulse shadow-md shadow-emerald-500/40 ring-2 ring-emerald-400/40'
                       : isDark
@@ -2579,7 +2606,7 @@ export function NewNoteModal({
                     <Mic className="w-4 h-4" />
                   )}
                 </button>
-              </div>
+              </motion.div>
             </div>
           </motion.div>
         </div>

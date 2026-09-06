@@ -23,7 +23,7 @@ import {
   RotateCcw,
   AlertCircle,
 } from 'lucide-react';
-import { ThemeMode, NoteItem, TodoSubItem } from '../types';
+import { ThemeMode, NoteItem, TodoSubItem, EntryType } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 import { TodoDrawer, parseTodoItemsFromNote } from './TodoDrawer';
 import { TaskDrawer } from './TaskDrawer';
@@ -43,6 +43,8 @@ interface TodoPageProps {
   searchQuery?: string;
   onSearchChange?: (val: string) => void;
   onOpenSearch?: () => void;
+  onSelectNote?: (note: NoteItem) => void;
+  onOpenNewNote?: (type?: EntryType) => void;
 }
 
 // Format local Date to YYYY-MM-DD string
@@ -86,6 +88,8 @@ export function TodoPage({
   onDeleteNote,
   searchQuery = '',
   onOpenSearch,
+  onSelectNote,
+  onOpenNewNote,
 }: TodoPageProps) {
   const isDark = theme === 'dark';
 
@@ -198,9 +202,11 @@ export function TodoPage({
     return (
       todoLists.find(
         (l) =>
-          l.isTodayList &&
+          (l.isTodayList ||
+            (l.title || '').trim().toLowerCase() === 'today' ||
+            l.id.startsWith('todo-today-')) &&
           !l.isArchived &&
-          (l.todayDate === todayStr || l.id === `todo-today-${todayStr}`)
+          (l.todayDate === todayStr || l.id === `todo-today-${todayStr}` || !l.todayDate)
       ) || {
         id: `todo-today-${todayStr}`,
         title: 'Today',
@@ -232,31 +238,6 @@ export function TodoPage({
       }
     }
   }, [notes, selectedTodoNoteForDrawer?.id, activeTodayNote]);
-
-  // Ensure an active Today note exists in persistent notes for today
-  useEffect(() => {
-    const exists = notes.some(
-      (n) =>
-        (n.entryType === 'todo' || !!n.isTodo) &&
-        n.isTodayList &&
-        !n.isArchived &&
-        n.todayDate === todayStr
-    );
-    if (!exists) {
-      const initialTodayNote: NoteItem = {
-        id: `todo-today-${todayStr}`,
-        title: 'Today',
-        content: '',
-        date: formattedTodayDate,
-        isTodo: true,
-        entryType: 'todo',
-        isTodayList: true,
-        todayDate: todayStr,
-        todoItems: [],
-      };
-      onAddNote(initialTodayNote);
-    }
-  }, [notes, todayStr, formattedTodayDate, onAddNote]);
 
   // Safe delete handler preventing removal of Today note
   const handleSafeDeleteNote = (noteId: string) => {
@@ -427,9 +408,9 @@ export function TodoPage({
   const displayedInboxLists = useMemo(() => {
     const customLists = todoLists.filter((list) => {
       // Exclude active today list from custom lists to prevent duplication with pinned Today card
-      if (list.isTodayList && list.todayDate === todayStr) return false;
-      if (list.id === `todo-today-${todayStr}`) return false;
-      if ((list.title || '').toLowerCase() === 'today' && list.isTodayList) return false;
+      if (list.isTodayList) return false;
+      if (list.id === activeTodayNote.id || list.id.startsWith('todo-today-')) return false;
+      if ((list.title || '').trim().toLowerCase() === 'today') return false;
 
       const items = parseTodoItemsFromNote(list);
       const hasPending = items.some((t) => !t.completed);
@@ -678,7 +659,11 @@ export function TodoPage({
     if (isAddingForToday) {
       // 1. Check if an active "Today" list already exists for today
       const existingTodayList = todoLists.find(
-        (l) => l.isTodayList && !l.isArchived && l.todayDate === todayStr
+        (l) =>
+          (l.isTodayList ||
+            (l.title || '').trim().toLowerCase() === 'today' ||
+            l.id.startsWith('todo-today-')) &&
+          !l.isArchived
       );
 
       if (existingTodayList) {
@@ -686,15 +671,13 @@ export function TodoPage({
         const currentTasks = parseTodoItemsFromNote(existingTodayList);
         updateNoteTasks(existingTodayList.id, [...currentTasks, newTask]);
       } else {
-        // Create a specific dedicated list in Inbox for today
+        // Create a specific dedicated list in Inbox for today using activeTodayNote
         const newTodayNote: NoteItem = {
-          id: `todo-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          ...activeTodayNote,
+          id: activeTodayNote.id || `todo-today-${todayStr}`,
           title: 'Today',
           content: `[ ] ${trimmed} @${todayStr}`,
-          date: new Date().toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          }),
+          date: formattedTodayDate,
           isTodo: true,
           entryType: 'todo',
           isTodayList: true,
@@ -1536,7 +1519,7 @@ export function TodoPage({
                   description={
                     filterStatus === 'completed'
                       ? 'Completed lists will show up here.'
-                      : 'Create a new list using the input below to organize your tasks.'
+                      : 'Create a new list to organize your tasks.'
                   }
                 />
               )}
@@ -1940,8 +1923,8 @@ export function TodoPage({
           </div>
         )}
 
-      {/* ADD TASK INPUT BAR AT THE BOTTOM (Hidden in Upcoming view to maximize scrolling space) */}
-      {activeTab !== 'upcoming' && (
+      {/* ADD TASK INPUT BAR AT THE BOTTOM (Today only) */}
+      {activeTab === 'today' && (
         <div className="shrink-0 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-20 md:pb-6 pt-2">
           <div
             className={`rounded-full transition-all duration-200 border ${
@@ -1986,11 +1969,7 @@ export function TodoPage({
                     handleBottomAdd();
                   }
                 }}
-                placeholder={
-                  activeTab === 'inbox'
-                    ? 'Create a new list...'
-                    : 'Add a task for Today...'
-                }
+                placeholder="Add a task for Today..."
                 className={`flex-1 bg-transparent text-sm md:text-[14.5px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-500 ${
                   isDark ? 'text-white' : 'text-neutral-900'
                 }`}
@@ -2198,6 +2177,10 @@ export function TodoPage({
         onUpdateNote={(updated) => {
           onUpdateNote(updated);
           setSelectedTodoNoteForDrawer(updated);
+        }}
+        onEdit={(note) => {
+          setSelectedTodoNoteForDrawer(null);
+          onSelectNote?.(note);
         }}
         onDelete={
           selectedTodoNoteForDrawer?.isTodayList ||

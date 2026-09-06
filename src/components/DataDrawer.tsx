@@ -298,28 +298,23 @@ export function DataDrawer({
                     </button>
                   </div>
 
-                  {/* Divider */}
-                  <div
-                    className={`my-3 border-t ${
-                      isDark ? 'border-neutral-800/80' : 'border-neutral-100'
-                    }`}
-                  />
-
                   {/* Reset all data button */}
-                  <button
-                    id="data-reset-btn"
-                    type="button"
-                    onClick={() => setCurrentView('confirm_reset')}
-                    className="w-full flex items-center justify-between py-2 px-1 text-red-500 hover:opacity-80 active:scale-[0.99] transition-all"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Trash2 className="w-5 h-5 text-red-500 stroke-[1.8]" />
-                      <span className="text-sm font-semibold text-red-500">
-                        Reset all data
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
-                  </button>
+                  <div className="pt-2">
+                    <button
+                      id="data-reset-btn"
+                      type="button"
+                      onClick={() => setCurrentView('confirm_reset')}
+                      className="w-full flex items-center justify-between py-2 px-1 text-red-500 hover:opacity-80 active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Trash2 className="w-5 h-5 text-red-500 stroke-[1.8]" />
+                        <span className="text-sm font-semibold text-red-500">
+                          Reset all data
+                        </span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-neutral-400" />
+                    </button>
+                  </div>
                 </div>
               )}
 

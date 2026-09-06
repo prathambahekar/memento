@@ -31,58 +31,6 @@ import {
   triggerHaptic,
 } from './lib/capacitor';
 
-const DEFAULT_INITIAL_NOTES: NoteItem[] = [
-  {
-    id: 'safe-personal-identity',
-    title: 'Personal Identity & Documents',
-    content: 'Aadhaar: 4812 9021 3491\nPAN Card: BZAPM4910K\nPhone: +91 98765 43210\nNotes: Primary confidential government identification numbers',
-    date: 'Sep 5',
-    isSafe: true,
-    isVault: true,
-    entryType: 'passwords',
-    personalInfo: [
-      { id: 'pi-1', label: 'Aadhaar Number', value: '4812 9021 3491', isMasked: true },
-      { id: 'pi-2', label: 'PAN Card Number', value: 'BZAPM4910K', isMasked: false },
-      { id: 'pi-3', label: 'Phone Number', value: '+91 98765 43210', isMasked: false },
-    ],
-  },
-  {
-    id: 'safe-discord',
-    title: 'Discord',
-    content: 'Email/Username: alex.dev@gmail.com\nPassword: ••••••••••••\nNotes: Primary account for community and dev servers',
-    date: 'Sep 5',
-    isSafe: true,
-    isVault: true,
-    entryType: 'passwords',
-    email: 'alex.dev@gmail.com',
-    password: 'w9$K#xL7!mP2@qR4',
-    service: 'Discord',
-  },
-  {
-    id: 'safe-netflix',
-    title: 'Netflix',
-    content: 'Email/Username: family.stream@outlook.com\nPassword: ••••••••••••\nNotes: 4K Premium subscription renewed monthly',
-    date: 'Sep 4',
-    isSafe: true,
-    isVault: true,
-    entryType: 'passwords',
-    email: 'family.stream@outlook.com',
-    password: 'N3tfl!x#2026$Ultra',
-    service: 'Netflix',
-  },
-  {
-    id: 'safe-prime-video',
-    title: 'Prime Video',
-    content: 'Email/Username: alex.prime@amazon.com\nPassword: ••••••••••••\nNotes: Amazon household video streaming profile',
-    date: 'Sep 3',
-    isSafe: true,
-    isVault: true,
-    entryType: 'passwords',
-    email: 'alex.prime@amazon.com',
-    password: 'P!m3V!deo#9821&X',
-    service: 'Prime Video',
-  },
-];
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -175,27 +123,62 @@ export default function App() {
       const saved = localStorage.getItem('memento_notes');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const seen = new Set<string>();
-          const loaded = parsed.map((item, idx) => {
-            let id = item?.id ? String(item.id) : `note-${idx}-${Date.now()}`;
-            if (seen.has(id)) {
-              id = `${id}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+        if (Array.isArray(parsed)) {
+          // Clean out previous mock data and empty auto-generated Today notes
+          const cleaned = parsed.filter((item) => {
+            if (!item) return false;
+            // Remove initial mock safe notes
+            if (
+              item.id === 'safe-personal-identity' ||
+              item.id === 'safe-discord' ||
+              item.id === 'safe-netflix' ||
+              item.id === 'safe-prime-video'
+            ) {
+              return false;
             }
-            seen.add(id);
-            return { ...item, id };
+            // Remove empty auto-generated Today notes with no tasks and empty content
+            const isToday =
+              item.isTodayList ||
+              (item.title || '').trim().toLowerCase() === 'today' ||
+              (typeof item.id === 'string' && item.id.startsWith('todo-today-'));
+            const tasks = parseTodoItemsFromNote(item);
+            if (isToday && tasks.length === 0 && (!item.content || !item.content.trim())) {
+              return false;
+            }
+            return true;
           });
-          const hasSafe = loaded.some((n) => n.entryType === 'passwords' || n.isSafe || n.isVault);
-          if (!hasSafe) {
-            return [...loaded, ...DEFAULT_INITIAL_NOTES];
+
+          // Deduplicate any duplicate today notes or duplicate IDs
+          const seenIds = new Set<string>();
+          let seenToday = false;
+          const deduplicated: NoteItem[] = [];
+
+          for (const item of cleaned) {
+            let id = item.id ? String(item.id).trim() : `note-${deduplicated.length}`;
+            const isToday =
+              item.isTodayList ||
+              (item.title || '').trim().toLowerCase() === 'today' ||
+              (typeof id === 'string' && id.startsWith('todo-today-'));
+
+            if (isToday) {
+              if (seenToday) continue; // Keep only one Today list
+              seenToday = true;
+            }
+
+            if (seenIds.has(id)) {
+              id = `${id}-${deduplicated.length}-${Math.random().toString(36).substring(2, 6)}`;
+            }
+            seenIds.add(id);
+            deduplicated.push({ ...item, id });
           }
-          return loaded;
+
+          return deduplicated;
         }
       }
     } catch {
       // ignore
     }
-    return DEFAULT_INITIAL_NOTES;
+    return [];
   });
 
   useEffect(() => {
@@ -430,9 +413,13 @@ export default function App() {
   };
 
   const handleUpdateNote = (updatedNote: NoteItem) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
-    );
+    setNotes((prev) => {
+      const exists = prev.some((n) => n.id === updatedNote.id);
+      if (!exists) {
+        return [updatedNote, ...prev];
+      }
+      return prev.map((n) => (n.id === updatedNote.id ? updatedNote : n));
+    });
     if (selectedTodoNote?.id === updatedNote.id) {
       setSelectedTodoNote(updatedNote);
     }
@@ -538,11 +525,20 @@ export default function App() {
               autoOpenKeyboard={autoOpenKeyboard}
               onBack={() => setCurrentPage('main')}
               onUpdateNote={handleUpdateNote}
-              onAddNote={(newNote) => setNotes((prev) => [newNote, ...prev])}
+              onAddNote={(newNote) => {
+                setNotes((prev) => {
+                  if (prev.some((n) => n.id === newNote.id)) {
+                    return prev.map((n) => (n.id === newNote.id ? newNote : n));
+                  }
+                  return [newNote, ...prev];
+                });
+              }}
               onDeleteNote={handleDeleteNote}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               onOpenSearch={() => setIsSearchDrawerOpen(true)}
+              onSelectNote={handleSelectNote}
+              onOpenNewNote={handleOpenNewNote}
             />
           ) : currentPage === 'safe' ? (
             <SafePage
@@ -660,6 +656,7 @@ export default function App() {
           theme={theme}
           autoOpenKeyboard={autoOpenKeyboard}
           editingNote={editingNote}
+          existingNotes={notes}
           initialType={
             editingNote
               ? editingNote.entryType ||
@@ -699,6 +696,10 @@ export default function App() {
           theme={theme}
           note={selectedPassKeyNote}
           onClose={() => setSelectedPassKeyNote(null)}
+          onUpdateNote={(updatedNote) => {
+            handleUpdateNote(updatedNote);
+            setSelectedPassKeyNote(updatedNote);
+          }}
           onEdit={(note) => {
             setSelectedPassKeyNote(null);
             setEditingNote(note);

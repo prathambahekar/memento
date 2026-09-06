@@ -248,7 +248,7 @@ export function DiaryDrawer({
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between py-2 border-b border-transparent">
+            <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
@@ -297,24 +297,7 @@ export function DiaryDrawer({
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                {onEdit && (
-                  <button
-                    id="diary-drawer-edit-btn"
-                    type="button"
-                    onClick={() => onEdit(note)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all ${
-                      isDark
-                        ? 'bg-[#1e1e1e] text-neutral-400 hover:text-white'
-                        : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900'
-                    }`}
-                    aria-label="Edit note"
-                    title="Edit"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                )}
-
-                {/* More options button (...) inside sub drawer */}
+                {/* More options button (...) inside sub drawer with Edit, Fav, Copy, Delete */}
                 <SubDrawerMoreMenu
                   theme={theme}
                   isFavorite={note.isFavorite}

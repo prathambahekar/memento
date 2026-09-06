@@ -70,6 +70,7 @@ export interface NoteItem {
   isTodo?: boolean;
   isVault?: boolean;
   isSafe?: boolean;
+  isPersonalInfo?: boolean;
   isDiary?: boolean;
   isArchived?: boolean;
   isTodayList?: boolean;

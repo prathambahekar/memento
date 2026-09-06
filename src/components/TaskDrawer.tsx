@@ -187,51 +187,49 @@ export const TaskDrawer: React.FC<TaskDrawerProps> = ({
 
             {/* Header: Clean, borderless, NO split lines, NO 'Todo' text */}
             <div className="flex items-center justify-between py-1.5 relative z-30">
-              {/* Left: Icon and List selector dropdown (no redundant 'Todo' text) */}
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
+              {/* Left: Interactive Dropdown Menu combining Icon + Text */}
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  id="task-list-dropdown-btn"
+                  type="button"
+                  onClick={() => setIsListDropdownOpen((prev) => !prev)}
+                  className={`h-9 pl-1.5 pr-3 rounded-full flex items-center gap-2 active:scale-95 transition-all select-none ${
+                    isDark
+                      ? 'bg-[#1c1c1f] hover:bg-[#252529] text-white border border-neutral-800/80'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-900 border border-neutral-200/80'
                   }`}
                 >
-                  <ListTodo className="w-3.5 h-3.5 stroke-[2]" />
-                </div>
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                      isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
+                    }`}
+                  >
+                    <ListTodo className="w-3.5 h-3.5 stroke-[2]" />
+                  </div>
+                  <span className="text-sm font-semibold tracking-tight max-w-[130px] truncate">
+                    {currentListTitle}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 ${
+                      isListDropdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-                {/* List Dropdown selector */}
-                {allLists.length > 0 && (
-                  <div className="relative" ref={dropdownRef}>
-                    <button
-                      id="task-list-dropdown-btn"
-                      type="button"
-                      onClick={() => setIsListDropdownOpen((prev) => !prev)}
-                      className={`h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-medium active:scale-95 transition-all ${
+                {/* Popover menu */}
+                <AnimatePresence>
+                  {isListDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                      transition={{ duration: 0.15 }}
+                      className={`absolute left-0 top-11 w-48 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 border backdrop-blur-xl ${
                         isDark
-                          ? 'bg-[#1e1e1e] hover:bg-[#282828] text-neutral-200'
-                          : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800'
+                          ? 'bg-[#1a1a1a]/95 border-neutral-800 text-white shadow-black/80'
+                          : 'bg-white/95 border-neutral-200 text-neutral-900 shadow-neutral-200/80'
                       }`}
                     >
-                      <span className="max-w-[130px] truncate">{currentListTitle}</span>
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 ${
-                          isListDropdownOpen ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
-
-                    {/* Popover menu */}
-                    <AnimatePresence>
-                      {isListDropdownOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                          transition={{ duration: 0.15 }}
-                          className={`absolute left-0 top-10 w-48 rounded-2xl p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] z-50 ${
-                            isDark
-                              ? 'bg-[#1c1c1c] text-white'
-                              : 'bg-white text-neutral-900 shadow-neutral-200/80'
-                          }`}
-                        >
                           <div
                             className={`text-[10px] font-semibold tracking-wider uppercase px-2.5 py-1 ${
                               isDark ? 'text-neutral-500' : 'text-neutral-400'
@@ -268,8 +266,6 @@ export const TaskDrawer: React.FC<TaskDrawerProps> = ({
                       )}
                     </AnimatePresence>
                   </div>
-                )}
-              </div>
 
               {/* Right controls: Delete (icon only) and Save button */}
               <div className="flex items-center gap-2 relative">

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   ArrowLeft,
@@ -15,6 +15,19 @@ import { ThemeMode, NoteItem } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 import { capitalizeFirstChar } from '../lib/formatters';
 import { PassKeyDrawer } from './PassKeyDrawer';
+
+export const DEFAULT_PERSONAL_INFO_ID = 'safe-default-personal-info';
+
+export function isPersonalInfoNote(note?: NoteItem | null): boolean {
+  if (!note) return false;
+  return Boolean(
+    note.id === DEFAULT_PERSONAL_INFO_ID ||
+    note.isPersonalInfo ||
+    (note.title && note.title.trim().toLowerCase() === 'personal info') ||
+    (note.title && note.title.trim().toLowerCase() === 'personal information') ||
+    (note.title && note.title.trim().toLowerCase() === 'personal identity & documents')
+  );
+}
 
 interface SafePageProps {
   theme: ThemeMode;
@@ -49,7 +62,8 @@ const CATEGORY_CHIPS: CategoryChip[] = [
 function noteMatchesCategory(note: NoteItem, cat: SafeCategory): boolean {
   if (cat === 'all') return true;
 
-  const hasPersonal =
+  const isPersonal =
+    isPersonalInfoNote(note) ||
     (note.personalInfo && note.personalInfo.length > 0) ||
     (note.content &&
       (note.content.toLowerCase().includes('aadhaar') ||
@@ -62,11 +76,11 @@ function noteMatchesCategory(note: NoteItem, cat: SafeCategory): boolean {
   const hasVoice = Boolean((note.voiceNotes && note.voiceNotes.length > 0) || note.hasVoiceNote);
   const hasPass = Boolean(note.password || note.service || note.email || note.entryType === 'passwords');
 
-  if (cat === 'personal') return Boolean(hasPersonal);
+  if (cat === 'personal') return Boolean(isPersonal);
   if (cat === 'documents') return hasDocs;
   if (cat === 'photos') return hasPhotos;
   if (cat === 'voice') return hasVoice;
-  if (cat === 'passwords') return hasPass;
+  if (cat === 'passwords') return hasPass && !isPersonalInfoNote(note);
 
   return false;
 }
@@ -75,6 +89,7 @@ export function SafePage({
   theme,
   notes,
   onBack,
+  onSelectNote,
   onOpenNewSafeNote,
   onUpdateNote,
   onDeleteNote,
@@ -88,9 +103,27 @@ export function SafePage({
   const [selectedCategory, setSelectedCategory] = useState<SafeCategory>('all');
   const [selectedPassKeyNote, setSelectedPassKeyNote] = useState<NoteItem | null>(null);
 
-  // Filter Safe notes
+  // Active default Personal Info note (always available as the default card in Safe)
+  const activePersonalInfoNote: NoteItem = useMemo(() => {
+    return (
+      notes.find(isPersonalInfoNote) || {
+        id: DEFAULT_PERSONAL_INFO_ID,
+        title: 'Personal Info',
+        content: '',
+        date: 'Safe',
+        isSafe: true,
+        isVault: true,
+        isPersonalInfo: true,
+        entryType: 'passwords' as const,
+        personalInfo: [], // empty at first
+      }
+    );
+  }, [notes]);
+
+  // Filter Safe notes: always includes the default Personal Info card
   const safeNotes = useMemo(() => {
-    return notes.filter((n) => {
+    const customSafeNotes = notes.filter((n) => {
+      if (isPersonalInfoNote(n)) return false;
       const isSafe = n.entryType === 'passwords' || !!n.isSafe || !!n.isVault;
       const hasPassword = typeof n.password === 'string' && n.password.trim() !== '';
       const hasService = typeof n.service === 'string' && n.service.trim() !== '';
@@ -98,7 +131,21 @@ export function SafePage({
       const hasDocs = Array.isArray(n.documents) && n.documents.length > 0;
       return isSafe || hasPassword || hasService || hasPersonal || hasDocs;
     });
-  }, [notes]);
+
+    return [activePersonalInfoNote, ...customSafeNotes];
+  }, [notes, activePersonalInfoNote]);
+
+  // Keep selectedPassKeyNote in sync when notes update
+  useEffect(() => {
+    if (selectedPassKeyNote) {
+      const match = notes.find((n) => n.id === selectedPassKeyNote.id);
+      if (match) {
+        setSelectedPassKeyNote(match);
+      } else if (isPersonalInfoNote(selectedPassKeyNote)) {
+        setSelectedPassKeyNote(activePersonalInfoNote);
+      }
+    }
+  }, [notes, selectedPassKeyNote?.id, activePersonalInfoNote]);
 
   // Category counts
   const categoryCounts = useMemo(() => {
@@ -133,12 +180,23 @@ export function SafePage({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter((n) => {
+        const isPersonal = isPersonalInfoNote(n);
+        const matchesPersonalCard =
+          isPersonal &&
+          ('personal info'.includes(q) ||
+            'personal'.includes(q) ||
+            'identity'.includes(q) ||
+            'aadhaar'.includes(q) ||
+            'phone'.includes(q) ||
+            'email'.includes(q));
+
         const inPersonal = n.personalInfo?.some(
           (p) => p.label.toLowerCase().includes(q) || p.value.toLowerCase().includes(q)
         );
         const inDocs = n.documents?.some((d) => d.name.toLowerCase().includes(q));
 
         return (
+          matchesPersonalCard ||
           n.title?.toLowerCase().includes(q) ||
           n.service?.toLowerCase().includes(q) ||
           n.email?.toLowerCase().includes(q) ||
@@ -271,38 +329,13 @@ export function SafePage({
         {filteredSafeNotes.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
             {filteredSafeNotes.map((note) => {
-              // Subtitle preview
-              let subtitle = '';
-              if (note.personalInfo && note.personalInfo.length > 0) {
-                const first = note.personalInfo[0];
-                subtitle = `${first.label}: ${
-                  first.isMasked ? '•••• ' + first.value.slice(-4) : first.value
-                }`;
-              } else if (note.documents && note.documents.length > 0) {
-                subtitle = `${note.documents.length} document${
-                  note.documents.length > 1 ? 's' : ''
-                }`;
-              } else if (note.voiceNotes && note.voiceNotes.length > 0) {
-                subtitle = `${note.voiceNotes.length} voice memo${
-                  note.voiceNotes.length > 1 ? 's' : ''
-                }`;
-              } else if (note.images && note.images.length > 0) {
-                subtitle = `${note.images.length} photo${
-                  note.images.length > 1 ? 's' : ''
-                }`;
-              } else if (note.email) {
-                subtitle = note.email;
-              } else if (note.service) {
-                subtitle = note.service;
-              } else {
-                subtitle = 'Encrypted Key';
-              }
-
-              const hasPersonal = Boolean(note.personalInfo && note.personalInfo.length > 0);
+              const hasPersonal =
+                isPersonalInfoNote(note) || Boolean(note.personalInfo && note.personalInfo.length > 0);
               const hasDocs = Boolean(note.documents && note.documents.length > 0);
               const hasVoice = Boolean((note.voiceNotes && note.voiceNotes.length > 0) || note.hasVoiceNote);
               const hasPhotos = Boolean((note.images && note.images.length > 0) || note.imageUrl);
               const hasPassword = Boolean(note.password);
+              const isDefaultSafe = !hasPersonal && !hasDocs && !hasVoice && !hasPhotos && !hasPassword;
 
               return (
                 <motion.div
@@ -316,14 +349,14 @@ export function SafePage({
                     triggerHaptic('light');
                     setSelectedPassKeyNote(note);
                   }}
-                  className={`group relative rounded-[22px] p-3.5 sm:p-4 flex items-center justify-between cursor-pointer transition-all duration-150 active:scale-[0.98] shadow-xs select-none border ${
+                  className={`group relative rounded-[20px] sm:rounded-[22px] px-3.5 py-3 sm:px-4 sm:py-3.5 flex items-center justify-between cursor-pointer transition-all duration-150 active:scale-[0.98] shadow-xs select-none border min-h-[54px] sm:min-h-[58px] ${
                     isDark
                       ? 'bg-[#141416] hover:bg-[#18181b] border-neutral-800/80 hover:border-neutral-700/80'
                       : 'bg-white hover:bg-neutral-50 border-neutral-200/90 hover:border-neutral-300'
                   }`}
                 >
-                  {/* Left Side: Title & Subtitle */}
-                  <div className="min-w-0 pr-2 flex flex-col justify-center">
+                  {/* Left Side: Title */}
+                  <div className="min-w-0 pr-2 flex items-center">
                     <h3
                       className={`font-semibold tracking-tight leading-snug truncate text-[14px] sm:text-[15px] ${
                         isDark ? 'text-white' : 'text-neutral-900'
@@ -331,17 +364,10 @@ export function SafePage({
                     >
                       {capitalizeFirstChar(note.title)}
                     </h3>
-                    <p
-                      className={`text-[11px] truncate mt-0.5 ${
-                        isDark ? 'text-neutral-400' : 'text-neutral-500'
-                      }`}
-                    >
-                      {subtitle}
-                    </p>
                   </div>
 
                   {/* Right Side: Badges */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
                     {hasPersonal && (
                       <div
                         className="w-6 h-6 rounded-full flex items-center justify-center bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
@@ -374,7 +400,7 @@ export function SafePage({
                         <Mic className="w-3 h-3 stroke-[2]" />
                       </div>
                     )}
-                    {hasPassword && !hasPersonal && !hasDocs && !hasPhotos && !hasVoice && (
+                    {(hasPassword || isDefaultSafe) && (
                       <div
                         className="w-6 h-6 rounded-full flex items-center justify-center bg-amber-500/10 text-amber-400 border border-amber-500/20"
                         title="Safe Key"
@@ -430,11 +456,25 @@ export function SafePage({
         theme={theme}
         note={selectedPassKeyNote}
         onClose={() => setSelectedPassKeyNote(null)}
-        onEdit={(updatedNote) => {
+        onUpdateNote={(updatedNote) => {
           onUpdateNote(updatedNote);
           setSelectedPassKeyNote(updatedNote);
         }}
+        onEdit={(noteToEdit) => {
+          setSelectedPassKeyNote(null);
+          onSelectNote?.(noteToEdit);
+        }}
         onDelete={(noteId) => {
+          if (isPersonalInfoNote(selectedPassKeyNote) || noteId === DEFAULT_PERSONAL_INFO_ID) {
+            const resetNote: NoteItem = {
+              ...activePersonalInfoNote,
+              content: '',
+              personalInfo: [],
+            };
+            onUpdateNote(resetNote);
+            setSelectedPassKeyNote(null);
+            return;
+          }
           onDeleteNote(noteId);
           setSelectedPassKeyNote(null);
         }}

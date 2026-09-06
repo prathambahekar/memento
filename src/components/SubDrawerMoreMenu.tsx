@@ -164,6 +164,7 @@ export function SubDrawerMoreMenu({
               {/* Edit Action */}
               {onEdit && (
                 <button
+                  id="sub-drawer-edit-action-btn"
                   type="button"
                   onClick={() => handleAction(onEdit)}
                   className={`w-full px-2.5 py-2 rounded-xl flex items-center gap-2.5 text-xs font-medium transition-colors ${
@@ -173,13 +174,14 @@ export function SubDrawerMoreMenu({
                   }`}
                 >
                   <Pencil className="w-4 h-4 text-neutral-400 dark:text-neutral-400 stroke-[2]" />
-                  <span>Edit {itemTypeLabel}</span>
+                  <span>Edit</span>
                 </button>
               )}
 
               {/* Delete Action */}
               {onDelete && (
                 <button
+                  id="sub-drawer-delete-action-btn"
                   type="button"
                   onClick={() => {
                     triggerHaptic('medium');
@@ -189,7 +191,7 @@ export function SubDrawerMoreMenu({
                   className="w-full px-2.5 py-2 rounded-xl flex items-center gap-2.5 text-xs font-medium transition-colors text-red-500 hover:bg-red-500/10 active:bg-red-500/15"
                 >
                   <Trash2 className="w-4 h-4 text-red-500 stroke-[2]" />
-                  <span>Delete {itemTypeLabel}</span>
+                  <span>Delete</span>
                 </button>
               )}
             </div>
