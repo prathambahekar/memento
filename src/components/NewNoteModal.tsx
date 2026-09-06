@@ -28,6 +28,12 @@ import {
   FileUp,
   Download,
   PenLine,
+  Hash,
+  Share2,
+  Tv,
+  Terminal,
+  Server,
+  Lock,
 } from 'lucide-react';
 import {
   ThemeMode,
@@ -62,6 +68,7 @@ interface NewNoteModalProps {
       email?: string;
       service?: string;
       password?: string;
+      tags?: string[];
       todoItems?: TodoSubItem[];
       hasVoiceNote?: boolean;
       voiceDuration?: string;
@@ -74,6 +81,239 @@ interface NewNoteModalProps {
     }
   ) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
+}
+
+const SAFE_SUGGESTED_TYPES = [
+  {
+    label: 'Email & Password',
+    badge: 'Email',
+    defaultTag: 'email',
+    placeholder: 'e.g. Google, Apple, Microsoft',
+    field1Label: 'EMAIL OR USERNAME',
+    field1Placeholder: 'user@example.com or username',
+    field2Label: 'PASSWORD',
+    field2Placeholder: 'Account password',
+    icon: KeyRound,
+    iconDark: 'bg-indigo-500/15 text-indigo-400',
+    iconLight: 'bg-indigo-50 text-indigo-600',
+    badgeDark: 'bg-indigo-500/10 text-indigo-400',
+    badgeLight: 'bg-indigo-50 text-indigo-700',
+  },
+  {
+    label: 'Passkeys',
+    badge: 'Auth',
+    defaultTag: 'passkey',
+    placeholder: 'e.g. GitHub, Google, Amazon',
+    field1Label: 'ACCOUNT / USERNAME',
+    field1Placeholder: 'Username or email for passkey',
+    field2Label: 'PASSKEY / CREDENTIAL ID',
+    field2Placeholder: 'Passkey handle or secret identifier',
+    icon: Shield,
+    iconDark: 'bg-emerald-500/15 text-emerald-400',
+    iconLight: 'bg-emerald-50 text-emerald-600',
+    badgeDark: 'bg-emerald-500/10 text-emerald-400',
+    badgeLight: 'bg-emerald-50 text-emerald-700',
+  },
+  {
+    label: 'Social Media',
+    badge: 'Social',
+    defaultTag: 'social',
+    placeholder: 'e.g. Twitter / X, Instagram, LinkedIn',
+    field1Label: 'HANDLE OR USERNAME',
+    field1Placeholder: '@handle or login email',
+    field2Label: 'PASSWORD',
+    field2Placeholder: 'Social account password',
+    icon: Share2,
+    iconDark: 'bg-sky-500/15 text-sky-400',
+    iconLight: 'bg-sky-50 text-sky-600',
+    badgeDark: 'bg-sky-500/10 text-sky-400',
+    badgeLight: 'bg-sky-50 text-sky-700',
+  },
+  {
+    label: 'OTT & Streaming',
+    badge: 'OTT',
+    defaultTag: 'ott',
+    placeholder: 'e.g. Netflix, Prime Video, Spotify',
+    field1Label: 'ACCOUNT EMAIL OR PHONE',
+    field1Placeholder: 'Subscriber email or mobile number',
+    field2Label: 'PASSWORD / PROFILE PIN',
+    field2Placeholder: 'Account password or profile PIN',
+    icon: Tv,
+    iconDark: 'bg-rose-500/15 text-rose-400',
+    iconLight: 'bg-rose-50 text-rose-600',
+    badgeDark: 'bg-rose-500/10 text-rose-400',
+    badgeLight: 'bg-rose-50 text-rose-700',
+  },
+  {
+    label: 'API Key & Token',
+    badge: 'API',
+    defaultTag: 'api',
+    placeholder: 'e.g. OpenAI, Stripe, GitHub PAT',
+    field1Label: 'KEY NAME / IDENTIFIER',
+    field1Placeholder: 'Production, Test, or Client Key',
+    field2Label: 'API KEY / SECRET TOKEN',
+    field2Placeholder: 'sk-..., Bearer token, or secret key',
+    icon: Terminal,
+    iconDark: 'bg-amber-500/15 text-amber-400',
+    iconLight: 'bg-amber-50 text-amber-600',
+    badgeDark: 'bg-amber-500/10 text-amber-400',
+    badgeLight: 'bg-amber-50 text-amber-700',
+  },
+  {
+    label: 'Server & SSH',
+    badge: 'Infra',
+    defaultTag: 'server',
+    placeholder: 'e.g. Ubuntu VPS, AWS EC2, DB Host',
+    field1Label: 'HOST OR IP / USER',
+    field1Placeholder: 'root@192.168.1.1 or server host',
+    field2Label: 'SSH KEY / ROOT PASSWORD',
+    field2Placeholder: 'Private key or root password',
+    icon: Server,
+    iconDark: 'bg-purple-500/15 text-purple-400',
+    iconLight: 'bg-purple-50 text-purple-600',
+    badgeDark: 'bg-purple-500/10 text-purple-400',
+    badgeLight: 'bg-purple-50 text-purple-700',
+  },
+  {
+    label: 'Banking & PIN',
+    badge: 'Finance',
+    defaultTag: 'finance',
+    placeholder: 'e.g. Chase Bank, HDFC NetBanking',
+    field1Label: 'CUSTOMER ID / USERNAME',
+    field1Placeholder: 'Customer ID or user ID',
+    field2Label: 'IPIN / NETBANKING PASSWORD',
+    field2Placeholder: 'Login password or transaction PIN',
+    icon: CreditCard,
+    iconDark: 'bg-teal-500/15 text-teal-400',
+    iconLight: 'bg-teal-50 text-teal-600',
+    badgeDark: 'bg-teal-500/10 text-teal-400',
+    badgeLight: 'bg-teal-50 text-teal-700',
+  },
+  {
+    label: 'Crypto & Wallet',
+    badge: 'Crypto',
+    defaultTag: 'crypto',
+    placeholder: 'e.g. MetaMask, Phantom Seed Phrase',
+    field1Label: 'WALLET ADDRESS / ACCOUNT',
+    field1Placeholder: '0x... or public wallet address',
+    field2Label: 'SEED PHRASE / PRIVATE KEY',
+    field2Placeholder: 'Secret recovery phrase or private key',
+    icon: Lock,
+    iconDark: 'bg-amber-500/15 text-amber-400',
+    iconLight: 'bg-amber-50 text-amber-600',
+    badgeDark: 'bg-amber-500/10 text-amber-400',
+    badgeLight: 'bg-amber-50 text-amber-700',
+  },
+];
+
+const QUICK_SAFE_TAGS = [
+  'social',
+  'ott',
+  'api',
+  'email',
+  'passkey',
+  'finance',
+  'crypto',
+  'server',
+  'work',
+  'personal',
+];
+
+const SAFE_TYPE_KEYWORDS: { tag: string; keywords: string[] }[] = [
+  {
+    tag: 'ott',
+    keywords: [
+      'netflix', 'prime', 'amazon prime', 'hulu', 'disney', 'disney+', 'hbo', 'max',
+      'spotify', 'youtube', 'yt', 'apple tv', 'peacock', 'paramount', 'paramount+',
+      'crunchyroll', 'twitch', 'hotstar', 'jio', 'sonyliv', 'zee5', 'tidal', 'deezer',
+      'audible', 'streaming', 'stream', 'movie', 'cinema', 'ott', 'showtime', 'mubi',
+      'viki', 'discovery', 'roku',
+    ],
+  },
+  {
+    tag: 'social',
+    keywords: [
+      'twitter', 'x.com', 'instagram', 'insta', 'ig', 'facebook', 'fb', 'linkedin',
+      'reddit', 'tiktok', 'snapchat', 'snap', 'discord', 'pinterest', 'threads',
+      'tumblr', 'mastodon', 'bluesky', 'telegram', 'whatsapp', 'wechat', 'signal',
+      'social', 'messenger', 'quora', 'medium',
+    ],
+  },
+  {
+    tag: 'api',
+    keywords: [
+      'api', 'token', 'openai', 'chatgpt', 'gpt', 'anthropic', 'claude', 'stripe',
+      'github pat', 'gitlab', 'huggingface', 'replicate', 'cohere', 'perplexity',
+      'deepseek', 'gemini', 'groq', 'aws', 'amazon web', 'azure', 'gcp', 'google cloud',
+      'sendgrid', 'twilio', 'resend', 'supabase', 'postman', 'rapidapi', 'firebase',
+      'vercel', 'cloudflare', 'secret', 'bearer', 'webhook', 'elevenlabs', 'midjourney',
+    ],
+  },
+  {
+    tag: 'email',
+    keywords: [
+      'email', 'mail', 'gmail', 'google', 'yahoo', 'outlook', 'hotmail', 'proton',
+      'protonmail', 'icloud', 'zoho', 'fastmail', 'aol', 'yandex', 'tutanota',
+      'inbox', 'mailbox', 'exchange',
+    ],
+  },
+  {
+    tag: 'passkey',
+    keywords: [
+      'passkey', 'webauthn', 'yubikey', 'fido', 'fido2', 'security key', 'hardware key',
+      'auth key', 'biometric',
+    ],
+  },
+  {
+    tag: 'server',
+    keywords: [
+      'server', 'ssh', 'vps', 'ec2', 'droplet', 'linode', 'digitalocean', 'hetzner',
+      'ovh', 'root', 'ubuntu', 'debian', 'centos', 'arch', 'linux', 'bastion', 'database',
+      'db', 'mysql', 'postgres', 'postgresql', 'mongodb', 'mongo', 'redis', 'portainer',
+      'docker', 'k8s', 'kubernetes', 'nginx', 'apache', 'cpanel', 'plesk', 'proxmox',
+      'vps host', 'dedicated', 'ssh key',
+    ],
+  },
+  {
+    tag: 'finance',
+    keywords: [
+      'bank', 'banking', 'netbanking', 'paypal', 'chase', 'wells fargo', 'bofa',
+      'bank of america', 'citi', 'citibank', 'barclays', 'hsbc', 'hdfc', 'icici',
+      'sbi', 'axis', 'revolut', 'wise', 'monzo', 'klarna', 'credit card', 'debit card',
+      'atm', 'pin', 'fidelity', 'vanguard', 'robinhood', 'zerodha', 'groww',
+      'angelone', 'upstox', 'schwab', 'charles schwab', 'amex', 'american express',
+      'mastercard', 'visa', 'tax', 'loan', 'mortgage',
+    ],
+  },
+  {
+    tag: 'crypto',
+    keywords: [
+      'crypto', 'bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'metamask',
+      'phantom', 'binance', 'coinbase', 'kraken', 'kucoin', 'bybit', 'okx', 'ledger',
+      'trezor', 'trust wallet', 'seed phrase', 'seed', 'mnemonic', 'wallet', 'polygon',
+      'matic', 'doge', 'cardano', 'ada', 'ripple', 'xrp', 'uniswap', 'pancake',
+    ],
+  },
+];
+
+function predictSafeType(title: string): string | null {
+  const clean = title.toLowerCase().trim();
+  if (!clean || clean.length < 2) return null;
+
+  for (const item of SAFE_TYPE_KEYWORDS) {
+    for (const kw of item.keywords) {
+      if (clean === kw) return item.tag;
+      if (kw.includes(' ') || kw.includes('+') || kw.includes('.')) {
+        if (clean.includes(kw)) return item.tag;
+      } else {
+        const regex = new RegExp(`(^|\\b|\\s|_|-)${kw}(\\b|\\s|_|-|$)`, 'i');
+        if (regex.test(clean) || (kw.length >= 4 && clean.includes(kw))) {
+          return item.tag;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 // Fallback audio tone generator in case microphone is blocked in restricted browser iframes
@@ -169,6 +409,85 @@ export function NewNoteModal({
   const [attachedDocs, setAttachedDocs] = useState<DocumentAttachment[]>([]);
   const [personalInfoFields, setPersonalInfoFields] = useState<PersonalInfoField[]>([]);
   const [safeSection, setSafeSection] = useState<'ids' | 'credentials'>('ids');
+
+  // Safe / Passkey tags and suggested types menu
+  const [safeTags, setSafeTags] = useState<string[]>([]);
+  const [showSafeTypeMenu, setShowSafeTypeMenu] = useState(false);
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [safePlaceholder, setSafePlaceholder] = useState('e.g. Google, GitHub, Netflix');
+  const [field1Label, setField1Label] = useState('EMAIL OR USERNAME');
+  const [field1Placeholder, setField1Placeholder] = useState('user@example.com or username');
+  const [field2Label, setField2Label] = useState('PASSWORD / KEY');
+  const [field2Placeholder, setField2Placeholder] = useState('Secret key or password');
+
+  const toggleSafeTag = (rawTag: string) => {
+    const cleanTag = rawTag.trim().toLowerCase().replace(/^#+/, '');
+    if (!cleanTag) return;
+    triggerHaptic('light');
+    lastAutoPredictedTag.current = null;
+    setSafeTags((prev) => {
+      if (prev.includes(cleanTag)) {
+        return prev.filter((t) => t !== cleanTag);
+      } else {
+        const matchingPreset = SAFE_SUGGESTED_TYPES.find((p) => p.defaultTag === cleanTag);
+        if (matchingPreset) {
+          setField1Label(matchingPreset.field1Label);
+          setField1Placeholder(matchingPreset.field1Placeholder);
+          setField2Label(matchingPreset.field2Label);
+          setField2Placeholder(matchingPreset.field2Placeholder);
+          setSafePlaceholder(matchingPreset.placeholder);
+        }
+        return [...prev, cleanTag];
+      }
+    });
+  };
+
+  const handleAddCustomTag = () => {
+    const cleanTag = customTagInput.trim().toLowerCase().replace(/^#+/, '');
+    if (cleanTag) {
+      toggleSafeTag(cleanTag);
+      setCustomTagInput('');
+    }
+  };
+
+  const lastAutoPredictedTag = useRef<string | null>(null);
+
+  const handleSafeTitleChange = (val: string) => {
+    setServiceName(val);
+
+    const predictedTag = predictSafeType(val);
+    if (predictedTag) {
+      const matchingPreset = SAFE_SUGGESTED_TYPES.find((p) => p.defaultTag === predictedTag);
+      if (matchingPreset) {
+        setField1Label(matchingPreset.field1Label);
+        setField1Placeholder(matchingPreset.field1Placeholder);
+        setField2Label(matchingPreset.field2Label);
+        setField2Placeholder(matchingPreset.field2Placeholder);
+        setSafePlaceholder(matchingPreset.placeholder);
+
+        setSafeTags((prev) => {
+          let updated = [...prev];
+          if (lastAutoPredictedTag.current && lastAutoPredictedTag.current !== predictedTag) {
+            updated = updated.filter((t) => t !== lastAutoPredictedTag.current);
+          }
+          if (!updated.includes(predictedTag)) {
+            updated.push(predictedTag);
+          }
+          return updated;
+        });
+        lastAutoPredictedTag.current = predictedTag;
+      }
+    } else if (!val.trim()) {
+      setSafeTags([]);
+      lastAutoPredictedTag.current = null;
+      setField1Label('EMAIL OR USERNAME');
+      setField1Placeholder('user@example.com or username');
+      setField2Label('PASSWORD / KEY');
+      setField2Placeholder('Secret key or password');
+      setSafePlaceholder('e.g. Google, GitHub, Netflix');
+    }
+  };
 
   // Voice recording & playback state (inside '+' sub-menu)
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -348,6 +667,7 @@ export function NewNoteModal({
             setSafeSection('credentials');
           }
         }
+        setSafeTags(editingNote.tags || []);
       } else {
         setEntryType(sanitizeEntryType(initialType));
         setTitle('');
@@ -365,10 +685,37 @@ export function NewNoteModal({
         setAttachedDocs([]);
         setPersonalInfoFields([]);
         setSafeSection('ids');
+        setSafeTags([]);
       }
 
       setLinkedExistingNote(editingNote || null);
       setShowTitleSuggestions(false);
+      setShowSafeTypeMenu(false);
+      setShowTagPicker(false);
+      setCustomTagInput('');
+      lastAutoPredictedTag.current = null;
+      if (editingNote?.tags && editingNote.tags.length > 0) {
+        const matchingPreset = SAFE_SUGGESTED_TYPES.find((p) => editingNote.tags?.includes(p.defaultTag));
+        if (matchingPreset) {
+          setField1Label(matchingPreset.field1Label);
+          setField1Placeholder(matchingPreset.field1Placeholder);
+          setField2Label(matchingPreset.field2Label);
+          setField2Placeholder(matchingPreset.field2Placeholder);
+          setSafePlaceholder(matchingPreset.placeholder);
+        } else {
+          setField1Label('EMAIL OR USERNAME');
+          setField1Placeholder('user@example.com or username');
+          setField2Label('PASSWORD / KEY');
+          setField2Placeholder('Secret key or password');
+          setSafePlaceholder('e.g. Google, GitHub, Netflix');
+        }
+      } else {
+        setField1Label('EMAIL OR USERNAME');
+        setField1Placeholder('user@example.com or username');
+        setField2Label('PASSWORD / KEY');
+        setField2Placeholder('Secret key or password');
+        setSafePlaceholder('e.g. Google, GitHub, Netflix');
+      }
       setNewTodoInput('');
       setIsPlusMenuOpen(false);
       setIsTypeDropdownOpen(false);
@@ -1119,6 +1466,7 @@ export function NewNoteModal({
           service: serviceName,
           email: emailUsername,
           password: passwordValue,
+          tags: safeTags.length > 0 ? safeTags : undefined,
           personalInfo: personalInfoFields.length > 0 ? personalInfoFields : undefined,
           documents: attachedDocs.length > 0 ? attachedDocs : undefined,
           hasVoiceNote: hasAnyVoice,
@@ -1196,6 +1544,7 @@ export function NewNoteModal({
         service: serviceName,
         email: emailUsername,
         password: passwordValue,
+        tags: safeTags.length > 0 ? safeTags : undefined,
         personalInfo: personalInfoFields.length > 0 ? personalInfoFields : undefined,
         documents: attachedDocs.length > 0 ? attachedDocs : undefined,
         hasVoiceNote: hasAnyVoice,
@@ -1495,19 +1844,85 @@ export function NewNoteModal({
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1.5">
-                        <label
-                          className={`text-[10px] font-semibold uppercase tracking-wider ${
-                            isDark ? 'text-neutral-400' : 'text-neutral-500'
-                          }`}
-                        >
-                          TITLE
-                        </label>
-                        <PenLine
-                          className={`w-3.5 h-3.5 ${
-                            isDark ? 'text-neutral-500' : 'text-neutral-400'
-                          }`}
-                        />
+                        {/* Left: Title Label / Choose type toggle */}
+                        <div className="flex items-center gap-2">
+                          <label
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setShowSafeTypeMenu((prev) => !prev);
+                            }}
+                            className={`text-[10px] font-semibold uppercase tracking-wider cursor-pointer select-none transition-colors ${
+                              showSafeTypeMenu
+                                ? isDark
+                                  ? 'text-white'
+                                  : 'text-neutral-900'
+                                : isDark
+                                ? 'text-neutral-400 hover:text-neutral-300'
+                                : 'text-neutral-500 hover:text-neutral-700'
+                            }`}
+                          >
+                            TITLE
+                          </label>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('light');
+                              setShowSafeTypeMenu((prev) => !prev);
+                            }}
+                            className={`text-[10px] flex items-center gap-1 font-medium transition-colors ${
+                              showSafeTypeMenu
+                                ? isDark
+                                  ? 'text-white'
+                                  : 'text-neutral-900'
+                                : isDark
+                                ? 'text-neutral-400 hover:text-white'
+                                : 'text-neutral-500 hover:text-neutral-900'
+                            }`}
+                          >
+                            <span>Choose type</span>
+                            <ChevronDown
+                              className={`w-3 h-3 transition-transform duration-200 ${
+                                showSafeTypeMenu ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Right: # (Tag) button directly next to PenLine (Pencil) */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            id="safe-tag-btn"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('light');
+                              setShowTagPicker((prev) => !prev);
+                            }}
+                            className={`px-1.5 py-0.5 rounded-lg text-xs font-semibold flex items-center gap-0.5 active:scale-95 transition-all ${
+                              showTagPicker || safeTags.length > 0
+                                ? isDark
+                                  ? 'bg-amber-500/20 text-amber-300 font-bold'
+                                  : 'bg-amber-100 text-amber-800 font-bold'
+                                : isDark
+                                ? 'text-neutral-400 hover:text-white hover:bg-neutral-800/80'
+                                : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-200/70'
+                            }`}
+                            title="Tag this safe item (#social, #ott, #api...)"
+                          >
+                            <Hash className="w-3.5 h-3.5 stroke-[2.2]" />
+                            {safeTags.length > 0 && (
+                              <span className="text-[10px] font-bold leading-none">{safeTags.length}</span>
+                            )}
+                          </button>
+                          <PenLine
+                            className={`w-3.5 h-3.5 ${
+                              isDark ? 'text-neutral-500' : 'text-neutral-400'
+                            }`}
+                          />
+                        </div>
                       </div>
+
                       <input
                         ref={titleInputRef}
                         type="text"
@@ -1516,12 +1931,222 @@ export function NewNoteModal({
                         autoCorrect="off"
                         spellCheck={false}
                         value={serviceName}
-                        onChange={(e) => setServiceName(e.target.value)}
-                        placeholder="e.g. Google, GitHub, Netflix"
+                        onChange={(e) => handleSafeTitleChange(e.target.value)}
+                        placeholder={safePlaceholder}
                         className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-500 ${
                           isDark ? 'text-white' : 'text-neutral-900'
                         }`}
                       />
+
+                      {/* Active tags pills (shown if any tags exist) */}
+                      {safeTags.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-dashed border-neutral-700/25 dark:border-neutral-700/30">
+                          {safeTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${
+                                isDark
+                                  ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+                                  : 'bg-amber-50 text-amber-800 border border-amber-200/60'
+                              }`}
+                            >
+                              <span>#{tag}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic('light');
+                                  setSafeTags((prev) => prev.filter((t) => t !== tag));
+                                }}
+                                className="hover:opacity-80 p-0.5 -mr-0.5 rounded-full"
+                                title={`Remove #${tag}`}
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Tag Picker Bar (when showTagPicker is active) */}
+                      <AnimatePresence>
+                        {showTagPicker && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-2.5 pt-2.5 border-t border-neutral-700/20 dark:border-neutral-800/60">
+                              <div className="flex items-center justify-between text-[10px] uppercase font-semibold tracking-wider text-neutral-400 mb-2">
+                                <span>Tags</span>
+                                <span className="text-[9px] text-neutral-500 lowercase">tap to toggle</span>
+                              </div>
+
+                              {/* Quick suggestions pills */}
+                              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                                {QUICK_SAFE_TAGS.map((tag) => {
+                                  const isSelected = safeTags.includes(tag);
+                                  return (
+                                    <button
+                                      key={tag}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleSafeTag(tag);
+                                      }}
+                                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all active:scale-95 ${
+                                        isSelected
+                                          ? isDark
+                                            ? 'bg-amber-500/25 text-amber-300 font-semibold'
+                                            : 'bg-amber-100 text-amber-800 font-semibold'
+                                          : isDark
+                                          ? 'bg-neutral-800/70 hover:bg-neutral-800 text-neutral-300'
+                                          : 'bg-neutral-200/70 hover:bg-neutral-200 text-neutral-700'
+                                      }`}
+                                    >
+                                      #{tag}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Custom tag input */}
+                              <div
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl ${
+                                  isDark ? 'bg-[#121214]' : 'bg-white border border-neutral-200/80'
+                                }`}
+                              >
+                                <span className="text-xs font-semibold text-neutral-500">#</span>
+                                <input
+                                  type="text"
+                                  value={customTagInput}
+                                  onChange={(e) => setCustomTagInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddCustomTag();
+                                    }
+                                  }}
+                                  placeholder="Add custom tag (e.g. streaming, gaming)..."
+                                  className={`flex-1 bg-transparent text-xs focus:outline-none placeholder:text-neutral-500 ${
+                                    isDark ? 'text-white' : 'text-neutral-900'
+                                  }`}
+                                />
+                                {customTagInput.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={handleAddCustomTag}
+                                    className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${
+                                      isDark
+                                        ? 'bg-neutral-800 text-white hover:bg-neutral-700'
+                                        : 'bg-neutral-200 text-neutral-800 hover:bg-neutral-300'
+                                    }`}
+                                  >
+                                    Add
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* In-Flow Card for Suggested Types - matching Screenshot 2 */}
+                      <AnimatePresence>
+                        {showSafeTypeMenu && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                            className="overflow-hidden"
+                          >
+                            <div
+                              className={`mt-2.5 p-1.5 rounded-2xl transition-colors ${
+                                isDark
+                                  ? 'bg-[#121214] text-white'
+                                  : 'bg-white text-neutral-900 shadow-sm border border-neutral-200/80'
+                              }`}
+                            >
+                              <div className="px-2.5 pt-1.5 pb-2 flex items-center justify-between text-[10px] uppercase font-semibold tracking-wider text-neutral-400">
+                                <span>Suggested Types</span>
+                                <span className="text-[9px] text-neutral-500 lowercase">tap to select</span>
+                              </div>
+
+                              <div className="max-h-56 overflow-y-auto space-y-0.5 py-0.5 no-scrollbar">
+                                {SAFE_SUGGESTED_TYPES.map((preset) => {
+                                  const IconComp = preset.icon;
+                                  const hasTag = safeTags.includes(preset.defaultTag);
+                                  const isSelected = field1Label === preset.field1Label || hasTag;
+                                  return (
+                                    <button
+                                      key={preset.label}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        triggerHaptic('light');
+                                        lastAutoPredictedTag.current = null;
+                                        // Do NOT fill title text box - keep user's input intact
+                                        if (!safeTags.includes(preset.defaultTag)) {
+                                          setSafeTags((prev) => [...prev, preset.defaultTag]);
+                                        }
+                                        setField1Label(preset.field1Label);
+                                        setField1Placeholder(preset.field1Placeholder);
+                                        setField2Label(preset.field2Label);
+                                        setField2Placeholder(preset.field2Placeholder);
+                                        if (preset.placeholder) {
+                                          setSafePlaceholder(preset.placeholder);
+                                        }
+                                        setShowSafeTypeMenu(false);
+                                        setTimeout(() => {
+                                          titleInputRef.current?.focus();
+                                        }, 60);
+                                      }}
+                                      className={`w-full px-2.5 py-2 rounded-xl flex items-center justify-between text-left transition-all ${
+                                        isSelected
+                                          ? isDark
+                                            ? 'bg-white/10 text-white font-medium'
+                                            : 'bg-neutral-100 text-neutral-900 font-semibold'
+                                          : isDark
+                                          ? 'hover:bg-white/5 text-neutral-200'
+                                          : 'hover:bg-neutral-50 text-neutral-800'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div
+                                          className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                                            isDark ? preset.iconDark : preset.iconLight
+                                          }`}
+                                        >
+                                          <IconComp className="w-3.5 h-3.5 stroke-[2]" />
+                                        </div>
+                                        <span className="text-xs font-medium truncate">
+                                          {preset.label}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                        <span
+                                          className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${
+                                            isDark ? preset.badgeDark : preset.badgeLight
+                                          }`}
+                                        >
+                                          {preset.badge}
+                                        </span>
+                                        {hasTag && (
+                                          <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2.5]" />
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Card 2: EMAIL OR USERNAME */}
@@ -1535,7 +2160,7 @@ export function NewNoteModal({
                           isDark ? 'text-neutral-400' : 'text-neutral-500'
                         }`}
                       >
-                        EMAIL OR USERNAME
+                        {field1Label}
                       </label>
                       <input
                         type="text"
@@ -1546,7 +2171,7 @@ export function NewNoteModal({
                         spellCheck={false}
                         value={emailUsername}
                         onChange={(e) => setEmailUsername(e.target.value)}
-                        placeholder="user@example.com or username"
+                        placeholder={field1Placeholder}
                         className={`w-full bg-transparent text-sm focus:outline-none placeholder:text-neutral-500 ${
                           isDark ? 'text-white' : 'text-neutral-900'
                         }`}
@@ -1565,7 +2190,7 @@ export function NewNoteModal({
                             isDark ? 'text-neutral-400' : 'text-neutral-500'
                           }`}
                         >
-                          PASSWORD / KEY
+                          {field2Label}
                         </label>
                         <button
                           type="button"
@@ -1600,7 +2225,7 @@ export function NewNoteModal({
                           spellCheck={false}
                           value={passwordValue}
                           onChange={(e) => setPasswordValue(e.target.value)}
-                          placeholder="Secret key or password"
+                          placeholder={field2Placeholder}
                           className={`w-full pr-8 bg-transparent text-sm font-mono focus:outline-none placeholder:text-neutral-500 ${
                             isDark ? 'text-white' : 'text-neutral-900'
                           }`}

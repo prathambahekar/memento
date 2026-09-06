@@ -69,6 +69,7 @@ export interface NoteItem {
   title: string;
   content: string;
   date: string;
+  tags?: string[];
   isFavorite?: boolean;
   isTodo?: boolean;
   isVault?: boolean;

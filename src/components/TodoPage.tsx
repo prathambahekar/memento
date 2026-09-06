@@ -29,6 +29,7 @@ import { TodoDrawer, parseTodoItemsFromNote } from './TodoDrawer';
 import { TaskDrawer } from './TaskDrawer';
 import { DayDetailsDrawer } from './DayDetailsDrawer';
 import { ArchiveDrawer } from './ArchiveDrawer';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 export type TodoTab = 'inbox' | 'today' | 'upcoming';
 
@@ -92,6 +93,7 @@ export function TodoPage({
   onOpenNewNote,
 }: TodoPageProps) {
   const isDark = theme === 'dark';
+  const isDesktop = useIsDesktop();
 
   // Three main options: 'inbox', 'today', 'upcoming'
   const [activeTab, setActiveTab] = useState<TodoTab>('inbox');
@@ -1923,9 +1925,13 @@ export function TodoPage({
           </div>
         )}
 
-      {/* ADD TASK INPUT BAR AT THE BOTTOM (Today only) */}
-      {activeTab === 'today' && (
-        <div className="shrink-0 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-20 md:pb-6 pt-2">
+      {/* ADD TASK / TODO INPUT BAR AT THE BOTTOM: Always on Today; Desktop-only on Inbox */}
+      {(activeTab === 'today' || (activeTab === 'inbox' && isDesktop)) && (
+        <div
+          className={`shrink-0 max-w-xl md:max-w-4xl lg:max-w-5xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-20 md:pb-6 pt-2 ${
+            activeTab === 'inbox' ? 'hidden md:block' : ''
+          }`}
+        >
           <div
             className={`rounded-full transition-all duration-200 border ${
               isInputFocused
@@ -1942,7 +1948,7 @@ export function TodoPage({
                 type="button"
                 onClick={handleBottomAdd}
                 disabled={!inputText.trim()}
-                aria-label="Add task"
+                aria-label={activeTab === 'inbox' ? 'Add new todo' : 'Add task'}
                 className={`w-7.5 h-7.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
                   inputText.trim()
                     ? isDark
@@ -1969,7 +1975,11 @@ export function TodoPage({
                     handleBottomAdd();
                   }
                 }}
-                placeholder="Add a task for Today..."
+                placeholder={
+                  activeTab === 'inbox'
+                    ? 'Add a new todo...'
+                    : 'Add a task for Today...'
+                }
                 className={`flex-1 bg-transparent text-sm md:text-[14.5px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-500 ${
                   isDark ? 'text-white' : 'text-neutral-900'
                 }`}

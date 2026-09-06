@@ -28,6 +28,7 @@ import {
 import { ThemeMode, NoteItem, PersonalInfoField, DocumentAttachment } from '../types';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 import { capitalizeFirstChar } from '../lib/formatters';
+import { getSafeNoteBadge } from '../lib/safeBadges';
 import { SubDrawerMoreMenu } from './SubDrawerMoreMenu';
 import { ImageLightbox } from './ImageLightbox';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
@@ -545,17 +546,18 @@ export function PassKeyDrawer({
   };
 
   // Determine primary badge
+  const safeBadge = getSafeNoteBadge(note);
+  let badgeIcon = safeBadge.icon || KeyRound;
+  let badgeLabel = safeBadge.name || 'Safe Key';
+  let badgeColor = isDark
+    ? safeBadge.darkPill || 'bg-amber-500/15 text-amber-300'
+    : safeBadge.lightPill || 'bg-amber-50 text-amber-700';
+
   const hasPersonal = personalFields.length > 0;
   const hasCredentials = Boolean(email || password);
   const hasDocs = attachedDocs.length > 0;
   const hasVoice = voiceNotes.length > 0;
   const hasPhotos = attachedImages.length > 0;
-
-  let badgeIcon = KeyRound;
-  let badgeLabel = 'Safe Key';
-  let badgeColor = isDark
-    ? 'bg-amber-500/15 text-amber-300'
-    : 'bg-amber-50 text-amber-700';
 
   if ((isPersonalCard || hasPersonal) && !hasCredentials) {
     badgeIcon = Shield;
@@ -563,24 +565,26 @@ export function PassKeyDrawer({
     badgeColor = isDark
       ? 'bg-emerald-500/15 text-emerald-400'
       : 'bg-emerald-50 text-emerald-600';
-  } else if (hasDocs && !hasCredentials && !hasPersonal) {
-    badgeIcon = FileText;
-    badgeLabel = 'Document';
-    badgeColor = isDark
-      ? 'bg-indigo-500/15 text-indigo-300'
-      : 'bg-indigo-50 text-indigo-700';
-  } else if (hasVoice && !hasCredentials && !hasPersonal && !hasDocs) {
-    badgeIcon = Mic;
-    badgeLabel = 'Voice Memo';
-    badgeColor = isDark
-      ? 'bg-rose-500/15 text-rose-300'
-      : 'bg-rose-50 text-rose-700';
-  } else if (hasPhotos && !hasCredentials && !hasPersonal && !hasDocs && !hasVoice) {
-    badgeIcon = ImageIcon;
-    badgeLabel = 'Photo Vault';
-    badgeColor = isDark
-      ? 'bg-sky-500/15 text-sky-300'
-      : 'bg-sky-50 text-sky-700';
+  } else if (!safeBadge.name) {
+    if (hasDocs && !hasCredentials && !hasPersonal) {
+      badgeIcon = FileText;
+      badgeLabel = 'Document';
+      badgeColor = isDark
+        ? 'bg-indigo-500/15 text-indigo-300'
+        : 'bg-indigo-50 text-indigo-700';
+    } else if (hasVoice && !hasCredentials && !hasPersonal && !hasDocs) {
+      badgeIcon = Mic;
+      badgeLabel = 'Voice Memo';
+      badgeColor = isDark
+        ? 'bg-rose-500/15 text-rose-300'
+        : 'bg-rose-50 text-rose-700';
+    } else if (hasPhotos && !hasCredentials && !hasPersonal && !hasDocs && !hasVoice) {
+      badgeIcon = ImageIcon;
+      badgeLabel = 'Photo Vault';
+      badgeColor = isDark
+        ? 'bg-sky-500/15 text-sky-300'
+        : 'bg-sky-50 text-sky-700';
+    }
   }
 
   const BadgeIconComponent = badgeIcon;
@@ -645,6 +649,22 @@ export function PassKeyDrawer({
                         {badgeLabel}
                       </span>
                     </div>
+                    {note.tags && note.tags.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                        {note.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                              isDark
+                                ? 'bg-amber-500/15 text-amber-300'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200/60'
+                            }`}
+                          >
+                            {tag.startsWith('#') ? tag : `#${tag}`}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 

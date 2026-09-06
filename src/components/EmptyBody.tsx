@@ -21,6 +21,7 @@ import { parseTodoItemsFromNote } from './TodoDrawer';
 import { CardContextMenu } from './CardContextMenu';
 import { triggerHaptic, isNativePlatform } from '../lib/capacitor';
 import { capitalizeFirstChar } from '../lib/formatters';
+import { getSafeNoteBadge } from '../lib/safeBadges';
 
 function createSampleAudioBlob(): Blob {
   const sampleRate = 44100;
@@ -326,7 +327,9 @@ function NoteCard({
   onTouchEndCard,
 }: NoteCardProps) {
   const isDark = theme === 'dark';
-  const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
+  const isPassKey = note.entryType === 'passwords' || !!note.isSafe || !!note.isVault || Boolean(note.password);
+  const safeBadge = isPassKey ? getSafeNoteBadge(note) : null;
+  const SafeCategoryIcon = safeBadge?.icon;
   const isTodo = note.entryType === 'todo' || !!note.isTodo;
   const isDiary = note.entryType === 'diary' || !!note.isDiary;
   const todoItems: TodoSubItem[] = isTodo ? parseTodoItemsFromNote(note) : [];
@@ -531,17 +534,30 @@ function NoteCard({
           )}
 
           {isPassKey && (
-            <span
-              className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
-                isDark
-                  ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
-                  : 'bg-amber-100 text-amber-800 border border-amber-200/80'
-              }`}
-              title="Safe key"
-            >
-              <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-400 shrink-0" />
-              <span className="hidden md:inline">Key</span>
-            </span>
+            <>
+              {safeBadge && safeBadge.name && SafeCategoryIcon && (
+                <span
+                  className={`inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0 border ${
+                    isDark ? safeBadge.darkIcon : safeBadge.lightIcon
+                  }`}
+                  title={safeBadge.name}
+                >
+                  <SafeCategoryIcon className="w-2.5 h-2.5 stroke-[2]" />
+                </span>
+              )}
+
+              <span
+                className={`inline-flex items-center justify-center w-5 h-5 md:w-auto md:h-auto md:px-2 md:py-0.5 md:gap-1 text-[10px] font-medium rounded-full shrink-0 ${
+                  isDark
+                    ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20'
+                    : 'bg-amber-100 text-amber-800 border border-amber-200/80'
+                }`}
+                title="Safe key"
+              >
+                <KeyRound className="w-3 h-3 md:w-2.5 md:h-2.5 text-amber-500 dark:text-amber-400 shrink-0" />
+                <span className="hidden md:inline">Key</span>
+              </span>
+            </>
           )}
 
           {!isPassKey && !isDiary && !isTodo && (
@@ -570,175 +586,175 @@ function NoteCard({
         </div>
       </div>
 
-      <div className="mt-1">
-
-
-        {/* Interactive Todo List (Shows up to 8 sub-tasks) */}
-        {isTodo && (
-          <div className="mt-2.5 space-y-1.5">
-            {todoItems.length > 0 ? (
-              <div className="space-y-1.5">
-                {todoItems.slice(0, 8).map((item, itemIdx) => (
-                  <div
-                    key={`card-todo-${note.id}-${item.id || itemIdx}`}
-                    className="flex items-center gap-2 group/item text-left"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onToggleTodoItem) {
-                        onToggleTodoItem(note.id, item.id);
-                      }
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-                        item.completed
-                          ? 'bg-emerald-500 text-white'
-                          : isDark
-                          ? 'border border-neutral-600 hover:border-neutral-400 bg-transparent'
-                          : 'border border-neutral-300 hover:border-neutral-400 bg-transparent'
-                      }`}
-                      title={item.completed ? 'Mark pending' : 'Mark done'}
+      {!isPassKey && (
+        <div className="mt-1">
+          {/* Interactive Todo List (Shows up to 8 sub-tasks) */}
+          {isTodo && (
+            <div className="mt-2.5 space-y-1.5">
+              {todoItems.length > 0 ? (
+                <div className="space-y-1.5">
+                  {todoItems.slice(0, 8).map((item, itemIdx) => (
+                    <div
+                      key={`card-todo-${note.id}-${item.id || itemIdx}`}
+                      className="flex items-center gap-2 group/item text-left"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onToggleTodoItem) {
+                          onToggleTodoItem(note.id, item.id);
+                        }
+                      }}
                     >
-                      {item.completed && (
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      )}
-                    </button>
-                    <span
-                      className={`text-xs truncate select-none ${
-                        item.completed
-                          ? 'line-through text-neutral-500'
-                          : isDark
-                          ? 'text-neutral-300'
-                          : 'text-neutral-700'
+                      <button
+                        type="button"
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                          item.completed
+                            ? 'bg-emerald-500 text-white'
+                            : isDark
+                            ? 'border border-neutral-600 hover:border-neutral-400 bg-transparent'
+                            : 'border border-neutral-300 hover:border-neutral-400 bg-transparent'
+                        }`}
+                        title={item.completed ? 'Mark pending' : 'Mark done'}
+                      >
+                        {item.completed && (
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        )}
+                      </button>
+                      <span
+                        className={`text-xs truncate select-none ${
+                          item.completed
+                            ? 'line-through text-neutral-500'
+                            : isDark
+                            ? 'text-neutral-300'
+                            : 'text-neutral-700'
+                        }`}
+                      >
+                        {item.text}
+                      </span>
+                    </div>
+                  ))}
+
+                  {todoItems.length > 8 && (
+                    <div
+                      className={`text-[10.5px] font-medium pt-0.5 ${
+                        isDark ? 'text-neutral-500' : 'text-neutral-400'
                       }`}
                     >
-                      {item.text}
-                    </span>
-                  </div>
-                ))}
+                      +{todoItems.length - 8} more tasks
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-neutral-500 italic py-1">
+                  No tasks yet • Click to add
+                </div>
+              )}
 
-                {todoItems.length > 8 && (
-                  <div
-                    className={`text-[10.5px] font-medium pt-0.5 ${
-                      isDark ? 'text-neutral-500' : 'text-neutral-400'
-                    }`}
-                  >
-                    +{todoItems.length - 8} more tasks
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-xs text-neutral-500 italic py-1">
-                No tasks yet • Click to add
-              </div>
-            )}
+              {cleanContent && (
+                <p
+                  className={`text-xs mt-1.5 line-clamp-4 leading-relaxed break-words ${
+                    isDark ? 'text-neutral-400' : 'text-neutral-600'
+                  }`}
+                >
+                  {cleanContent}
+                </p>
+              )}
+            </div>
+          )}
 
-            {cleanContent && (
-              <p
-                className={`text-xs mt-1.5 line-clamp-4 leading-relaxed break-words ${
-                  isDark ? 'text-neutral-400' : 'text-neutral-600'
-                }`}
-              >
-                {cleanContent}
-              </p>
-            )}
-          </div>
-        )}
+          {/* Standard Notes / Diary Content with Interactive Checkboxes */}
+          {!isTodo && (
+            <div className="mt-2 space-y-1.5">
+              {note.email && (
+                <div className="text-[11.5px] font-mono text-neutral-400 truncate">
+                  {note.email}
+                </div>
+              )}
 
-        {/* Standard Notes / Diary Content with Interactive Checkboxes */}
-        {!isTodo && !isPassKey && (
-          <div className="mt-2 space-y-1.5">
-            {note.email && (
-              <div className="text-[11.5px] font-mono text-neutral-400 truncate">
-                {note.email}
-              </div>
-            )}
+              {note.content && (
+                <InteractiveNoteContent
+                  content={note.content}
+                  isDark={isDark}
+                  onToggleCheckbox={handleToggleContentCheckbox}
+                />
+              )}
+            </div>
+          )}
 
-            {note.content && (
-              <InteractiveNoteContent
-                content={note.content}
-                isDark={isDark}
-                onToggleCheckbox={handleToggleContentCheckbox}
+          {/* Attached Photo Previews (Adaptive Grid) */}
+          {allImages.length === 1 && (
+            <div
+              className={`mt-2.5 overflow-hidden rounded-xl border flex items-center justify-center ${
+                isDark
+                  ? 'border-neutral-800/80 bg-[#181818]'
+                  : 'border-neutral-200/40 bg-neutral-50/50'
+              }`}
+            >
+              <img
+                src={allImages[0]}
+                alt={note.title || 'Attached photo'}
+                className="w-full max-h-72 sm:max-h-80 object-contain rounded-xl pointer-events-none select-none"
+                draggable={false}
+                loading="lazy"
               />
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Attached Photo Previews (Adaptive Grid) */}
-        {allImages.length === 1 && (
-          <div
-            className={`mt-2.5 overflow-hidden rounded-xl border flex items-center justify-center ${
-              isDark
-                ? 'border-neutral-800/80 bg-[#181818]'
-                : 'border-neutral-200/40 bg-neutral-50/50'
-            }`}
-          >
-            <img
-              src={allImages[0]}
-              alt={note.title || 'Attached photo'}
-              className="w-full max-h-72 sm:max-h-80 object-contain rounded-xl pointer-events-none select-none"
-              draggable={false}
-              loading="lazy"
-            />
-          </div>
-        )}
+          {allImages.length === 2 && (
+            <div className="mt-2.5 grid grid-cols-2 gap-1.5 overflow-hidden rounded-xl">
+              {allImages.map((src, i) => (
+                <div
+                  key={`pair-img-${note.id}-${i}`}
+                  className={`aspect-square rounded-xl overflow-hidden border ${
+                    isDark
+                      ? 'bg-[#181818] border-neutral-800/80'
+                      : 'bg-neutral-50/50 border-neutral-200/40'
+                  }`}
+                >
+                  <img
+                    src={src}
+                    alt=""
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                    draggable={false}
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
 
-        {allImages.length === 2 && (
-          <div className="mt-2.5 grid grid-cols-2 gap-1.5 overflow-hidden rounded-xl">
-            {allImages.map((src, i) => (
-              <div
-                key={`pair-img-${note.id}-${i}`}
-                className={`aspect-square rounded-xl overflow-hidden border ${
-                  isDark
-                    ? 'bg-[#181818] border-neutral-800/80'
-                    : 'bg-neutral-50/50 border-neutral-200/40'
-                }`}
-              >
-                <img
-                  src={src}
-                  alt=""
-                  className="w-full h-full object-cover pointer-events-none select-none"
-                  draggable={false}
-                  loading="lazy"
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {allImages.length >= 3 && (
-          <div className="mt-2.5 grid grid-cols-3 gap-1.5 overflow-hidden rounded-xl">
-            {allImages.slice(0, 3).map((src, i) => (
-              <div
-                key={`grid-img-${note.id}-${i}`}
-                className={`relative aspect-square rounded-xl overflow-hidden border ${
-                  isDark
-                    ? 'bg-[#181818] border-neutral-800/80'
-                    : 'bg-neutral-50/50 border-neutral-200/40'
-                }`}
-              >
-                <img
-                  src={src}
-                  alt=""
-                  className="w-full h-full object-cover pointer-events-none select-none"
-                  draggable={false}
-                  loading="lazy"
-                />
-                {i === 2 && allImages.length > 3 && (
-                  <div
-                    className={`absolute inset-0 backdrop-blur-[1px] flex items-center justify-center text-xs font-bold ${
-                      isDark ? 'bg-black/65 text-white' : 'bg-black/45 text-white'
-                    }`}
-                  >
-                    +{allImages.length - 2}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          {allImages.length >= 3 && (
+            <div className="mt-2.5 grid grid-cols-3 gap-1.5 overflow-hidden rounded-xl">
+              {allImages.slice(0, 3).map((src, i) => (
+                <div
+                  key={`grid-img-${note.id}-${i}`}
+                  className={`relative aspect-square rounded-xl overflow-hidden border ${
+                    isDark
+                      ? 'bg-[#181818] border-neutral-800/80'
+                      : 'bg-neutral-50/50 border-neutral-200/40'
+                  }`}
+                >
+                  <img
+                    src={src}
+                    alt=""
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                    draggable={false}
+                    loading="lazy"
+                  />
+                  {i === 2 && allImages.length > 3 && (
+                    <div
+                      className={`absolute inset-0 backdrop-blur-[1px] flex items-center justify-center text-xs font-bold ${
+                        isDark ? 'bg-black/65 text-white' : 'bg-black/45 text-white'
+                      }`}
+                    >
+                      +{allImages.length - 2}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Footer: showing todo progress, voice badge, and photo badge if present (non-pass/key notes) */}
       {!isPassKey && (isTodo || voiceCount > 0 || allImages.length > 0) && (
@@ -1167,7 +1183,7 @@ export function EmptyBody({
   const Icon = emptyState.Icon;
 
 function estimateNoteHeight(note: NoteItem): number {
-  const isPassKey = note.entryType === 'passwords' || !!note.isSafe;
+  const isPassKey = note.entryType === 'passwords' || !!note.isSafe || !!note.isVault || Boolean(note.password);
   if (isPassKey) {
     return 60;
   }

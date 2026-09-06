@@ -302,6 +302,7 @@ export default function App() {
       email?: string;
       service?: string;
       password?: string;
+      tags?: string[];
       todoItems?: TodoSubItem[];
       hasVoiceNote?: boolean;
       voiceDuration?: string;
@@ -334,6 +335,7 @@ export default function App() {
       email: extra?.email,
       service: extra?.service,
       password: extra?.password,
+      tags: extra?.tags,
       todoItems: extra?.todoItems,
       hasVoiceNote: extra?.hasVoiceNote,
       voiceDuration: extra?.voiceDuration,
