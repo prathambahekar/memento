@@ -87,3 +87,15 @@ body.is-native-android {
   scrollbar-width: none;
 }
 
+.diary-editor-placeholder[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: #737373;
+  pointer-events: none;
+  user-select: none;
+  display: inline;
+}
+
+html:not(.dark) .diary-editor-placeholder[data-empty="true"]::before {
+  color: #a3a3a3;
+}
+

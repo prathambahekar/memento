@@ -1270,12 +1270,6 @@ export function DiaryPage({
                               <span>{readingTime} min read</span>
                             </span>
 
-                            {wordCount > 0 && (
-                              <span className="hidden sm:inline-block opacity-60">
-                                • {wordCount} words
-                              </span>
-                            )}
-
                             {/* Clean Photo Attachment Badge (No inside images) */}
                             {hasPhotos && (
                               <span

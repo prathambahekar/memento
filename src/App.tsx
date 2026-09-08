@@ -56,6 +56,8 @@ export default function App() {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [homeChip, setHomeChip] = useState<HomeChipFilter>('all');
   const [newNoteInitialType, setNewNoteInitialType] = useState<EntryType | undefined>(undefined);
+  const [isNewDiaryOpen, setIsNewDiaryOpen] = useState(false);
+  const [newDiaryDraft, setNewDiaryDraft] = useState<{ title: string; content: string; images?: string[] } | null>(null);
 
   const handleOpenNewNote = (preferredType?: unknown) => {
     const validTypes: EntryType[] = ['notes', 'todo', 'passwords', 'diary'];
@@ -63,6 +65,18 @@ export default function App() {
       typeof preferredType === 'string' && (validTypes as string[]).includes(preferredType)
         ? (preferredType as EntryType)
         : undefined;
+
+    const isDiaryContext =
+      safeType === 'diary' ||
+      (!safeType && (currentPage === 'diary' || activeTab === 'diary' || homeChip === 'diary'));
+
+    if (isDiaryContext) {
+      setNewDiaryDraft({ title: '', content: '' });
+      setSelectedDiaryNote(null);
+      setIsNewDiaryOpen(true);
+      return;
+    }
+
     setEditingNote(null);
     setNewNoteInitialType(safeType);
     setIsNewNoteOpen(true);
@@ -788,6 +802,14 @@ export default function App() {
             setIsNewNoteOpen(false);
             setEditingNote(null);
           }}
+          onOpenDiaryDraft={(draft) => {
+            setIsNewNoteOpen(false);
+            setEditingNote(null);
+            setNewNoteInitialType(undefined);
+            setSelectedDiaryNote(null);
+            setNewDiaryDraft(draft);
+            setIsNewDiaryOpen(true);
+          }}
         />
 
         {/* Pass / Key Detail Drawer Menu */}
@@ -848,18 +870,27 @@ export default function App() {
 
         {/* Diary / Note Detail Drawer Menu */}
         <DiaryDrawer
-          isOpen={!!selectedDiaryNote}
+          isOpen={!!selectedDiaryNote || isNewDiaryOpen}
           theme={theme}
           note={selectedDiaryNote}
-          onClose={() => setSelectedDiaryNote(null)}
+          initialDraft={newDiaryDraft}
+          onClose={() => {
+            setSelectedDiaryNote(null);
+            setIsNewDiaryOpen(false);
+            setNewDiaryDraft(null);
+          }}
           onEdit={(note) => {
             setSelectedDiaryNote(null);
+            setIsNewDiaryOpen(false);
+            setNewDiaryDraft(null);
             setEditingNote(note);
             setIsNewNoteOpen(true);
           }}
           onDelete={(id) => {
             setNotes((prev) => prev.filter((n) => n.id !== id));
             setSelectedDiaryNote(null);
+            setIsNewDiaryOpen(false);
+            setNewDiaryDraft(null);
           }}
           onToggleFavorite={(id) => {
             handleToggleFavorite(id);
@@ -872,6 +903,20 @@ export default function App() {
               prev.map((n) => (n.id === updated.id ? updated : n))
             );
             setSelectedDiaryNote(updated);
+          }}
+          onSaveNewNote={(newEntry) => {
+            triggerHaptic('success');
+            setNotes((prev) => [newEntry, ...prev]);
+            setIsNewDiaryOpen(false);
+            setNewDiaryDraft(null);
+          }}
+          onSwitchFormat={(format, draft) => {
+            setIsNewDiaryOpen(false);
+            setSelectedDiaryNote(null);
+            setNewDiaryDraft(null);
+            setEditingNote(null);
+            setNewNoteInitialType(format);
+            setIsNewNoteOpen(true);
           }}
         />
 

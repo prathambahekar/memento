@@ -94,6 +94,7 @@ export interface NoteItem {
   imageHeight?: number;
   imageWidthPercent?: number;
   imageFit?: 'cover' | 'contain';
+  imageAlign?: 'left' | 'center' | 'right';
   mood?: string;
   documents?: DocumentAttachment[];
   personalInfo?: PersonalInfoField[];

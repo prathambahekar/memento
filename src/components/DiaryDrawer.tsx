@@ -27,14 +27,20 @@ import {
   Type,
   Palette,
   Maximize2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
   ChevronsLeft,
   ChevronsRight,
   ArrowUpDown,
   Scaling,
   Grid2x2,
   Grid3x3,
+  Clock,
+  Feather,
+  ListTodo,
 } from 'lucide-react';
-import { ThemeMode, NoteItem, VoiceNoteAttachment } from '../types';
+import { ThemeMode, NoteItem, VoiceNoteAttachment, EntryType } from '../types';
 import { triggerHaptic } from '../lib/capacitor';
 import { formatDiaryHeaderDate, stripHtml, parseNoteDateToISO, formatDateToISO, SHORT_MONTHS } from '../lib/formatters';
 import { ImageLightbox } from './ImageLightbox';
@@ -61,18 +67,28 @@ function formatInitialHtml(text: string): string {
   return converted.replace(/\n/g, '<br/>');
 }
 
-const MOOD_OPTIONS = [
-  { emoji: '✨', label: 'Grateful' },
-  { emoji: '😌', label: 'Peaceful' },
-  { emoji: '😊', label: 'Joyful' },
-  { emoji: '💡', label: 'Inspired' },
-  { emoji: '🌿', label: 'Calm' },
-  { emoji: '⚡', label: 'Energetic' },
-  { emoji: '💭', label: 'Reflective' },
-  { emoji: '🥰', label: 'Loved' },
-  { emoji: '😴', label: 'Tired' },
-  { emoji: '🌧️', label: 'Melancholy' },
+export const MOOD_OPTIONS = [
+  { emoji: '✨', label: 'Grateful', desc: 'Thankful & blessed' },
+  { emoji: '😌', label: 'Peaceful', desc: 'Calm & content' },
+  { emoji: '😊', label: 'Happy', desc: 'Joyful & positive' },
+  { emoji: '💡', label: 'Inspired', desc: 'Creative ideas' },
+  { emoji: '🌿', label: 'Calm', desc: 'Relaxed & grounded' },
+  { emoji: '⚡', label: 'Energetic', desc: 'Motivated & driven' },
+  { emoji: '💭', label: 'Thoughtful', desc: 'Deep reflection' },
+  { emoji: '🥰', label: 'Loved', desc: 'Warm & affectionate' },
+  { emoji: '😴', label: 'Tired', desc: 'Exhausted & sleepy' },
+  { emoji: '🌧️', label: 'Down', desc: 'Sad or heavy-hearted' },
 ];
+
+export function findMood(val?: string) {
+  if (!val) return null;
+  const trimmed = val.trim();
+  const match = MOOD_OPTIONS.find(
+    (m) => m.emoji === trimmed || m.label.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (match) return match;
+  return { emoji: trimmed.length <= 2 ? trimmed : '✨', label: trimmed, desc: '' };
+}
 
 const CALENDAR_MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -141,22 +157,28 @@ function createSampleAudioBlob(): Blob {
 interface DiaryDrawerProps {
   isOpen: boolean;
   theme: ThemeMode;
-  note: NoteItem | null;
+  note?: NoteItem | null;
+  initialDraft?: { title: string; content: string; images?: string[] } | null;
   onClose: () => void;
   onEdit?: (note: NoteItem) => void;
   onDelete?: (id: string) => void;
   onToggleFavorite?: (id: string) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
+  onSaveNewNote?: (newNote: NoteItem) => void;
+  onSwitchFormat?: (format: EntryType, draft: { title: string; content: string }) => void;
 }
 
 export function DiaryDrawer({
   isOpen,
   theme,
   note,
+  initialDraft,
   onClose,
   onDelete,
   onToggleFavorite,
   onUpdateNote,
+  onSaveNewNote,
+  onSwitchFormat,
 }: DiaryDrawerProps) {
   const isDark = theme === 'dark';
   const isDesktop = useIsDesktop();
@@ -172,6 +194,7 @@ export function DiaryDrawer({
   const [imageHeight, setImageHeight] = useState<number>(() => note?.imageHeight || 340);
   const [imageWidthPercent, setImageWidthPercent] = useState<number>(() => note?.imageWidthPercent || 100);
   const [imageFit, setImageFit] = useState<'cover' | 'contain'>(() => note?.imageFit || 'cover');
+  const [imageAlign, setImageAlign] = useState<'left' | 'center' | 'right'>(() => note?.imageAlign || 'left');
   const [isResizingImage, setIsResizingImage] = useState(false);
   const [imageGridCols, setImageGridCols] = useState<1 | 2 | 3>(2);
   const [voiceNotes, setVoiceNotes] = useState<VoiceNoteAttachment[]>([]);
@@ -180,6 +203,7 @@ export function DiaryDrawer({
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isPromptsOpen, setIsPromptsOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isImageMenuOpen, setIsImageMenuOpen] = useState(false);
   const [isSavedJustNow, setIsSavedJustNow] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -217,15 +241,46 @@ export function DiaryDrawer({
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const moreFormattingRef = useRef<HTMLDivElement>(null);
   const moodPickerRef = useRef<HTMLDivElement>(null);
+  const imageWrapperRef = useRef<HTMLDivElement>(null);
+  const imageMenuRef = useRef<HTMLDivElement>(null);
+  const quickAddRef = useRef<HTMLDivElement>(null);
   const saveTimeoutRef = useRef<any>(null);
 
   // Floating toolbar & popover states
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [selectedTextColor, setSelectedTextColor] = useState<string | null>(null);
   const [isMoreFormattingOpen, setIsMoreFormattingOpen] = useState(false);
   const [isMoodPickerOpen, setIsMoodPickerOpen] = useState(false);
+  const [moodPopoverOffset, setMoodPopoverOffset] = useState(0);
 
-  // Sync state when incoming note changes
+  // Position mood popover so it never overflows off mobile screens
+  const updateMoodPopoverPosition = useCallback(() => {
+    if (moodPickerRef.current) {
+      const rect = moodPickerRef.current.getBoundingClientRect();
+      const popoverWidth = Math.min(window.innerWidth - 32, 288);
+      const rightEdge = rect.left + popoverWidth;
+      const maxAllowedRight = window.innerWidth - 16;
+      if (rightEdge > maxAllowedRight) {
+        const shift = rightEdge - maxAllowedRight;
+        const maxShift = Math.max(0, rect.left - 16);
+        setMoodPopoverOffset(-Math.min(shift, maxShift));
+      } else {
+        setMoodPopoverOffset(0);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isMoodPickerOpen) {
+      updateMoodPopoverPosition();
+      const handleResize = () => updateMoodPopoverPosition();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+  }, [isMoodPickerOpen, updateMoodPopoverPosition]);
+
+  // Sync state when incoming note changes or new draft opens
   useEffect(() => {
     if (note) {
       setTitle(note.title || '');
@@ -255,6 +310,7 @@ export function DiaryDrawer({
       setImageHeight(note.imageHeight || 340);
       setImageWidthPercent(note.imageWidthPercent || 100);
       setImageFit(note.imageFit || 'cover');
+      setImageAlign(note.imageAlign || 'left');
 
       const vns =
         note.voiceNotes && note.voiceNotes.length > 0
@@ -279,18 +335,40 @@ export function DiaryDrawer({
         setCalNavDate(new Date());
       }
       setCalMode('days');
+    } else if (isOpen) {
+      // New diary entry initialization
+      setTitle(initialDraft?.title || '');
+      setTitleError(false);
+      setIsSavedJustNow(false);
+      const rawDraftContent = initialDraft?.content || '';
+      const formattedDraft = formatInitialHtml(rawDraftContent);
+      setContent(formattedDraft);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = formattedDraft;
+      }
+      setCurrentDate(formatDateToISO(new Date()));
+      setCurrentMood(undefined);
+      setImages(initialDraft?.images || []);
+      setImageHeight(340);
+      setImageWidthPercent(48);
+      setImageFit('cover');
+      setImageAlign('left');
+      setVoiceNotes([]);
+      setCalNavDate(new Date());
+      setCalMode('days');
     }
-  }, [note, isOpen]);
+  }, [note, isOpen, initialDraft]);
 
   // Ensure DOM innerHTML is synced on drawer open
   useEffect(() => {
-    if (isOpen && note && editorRef.current) {
-      const formatted = formatInitialHtml(note.content || '');
+    if (isOpen && editorRef.current) {
+      const rawSource = note ? note.content || '' : initialDraft?.content || '';
+      const formatted = formatInitialHtml(rawSource);
       if (editorRef.current.innerHTML !== formatted) {
         editorRef.current.innerHTML = formatted;
       }
     }
-  }, [isOpen, note]);
+  }, [isOpen, note, initialDraft]);
 
   // Clean up audio and timers on unmount or close
   useEffect(() => {
@@ -326,6 +404,12 @@ export function DiaryDrawer({
       }
       if (moodPickerRef.current && !moodPickerRef.current.contains(target)) {
         setIsMoodPickerOpen(false);
+      }
+      if (imageMenuRef.current && !imageMenuRef.current.contains(target)) {
+        setIsImageMenuOpen(false);
+      }
+      if (quickAddRef.current && !quickAddRef.current.contains(target)) {
+        setIsQuickAddOpen(false);
       }
     };
     document.addEventListener('mousedown', handleOutside);
@@ -403,18 +487,6 @@ export function DiaryDrawer({
       };
     }
   }, [currentDate]);
-
-  // Word count memo from content
-  const wordCount = useMemo(() => {
-    if (!content) return 0;
-    const clean = content
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/[\u200B-\u200D\uFEFF]/g, '')
-      .trim();
-    if (!clean) return 0;
-    return clean.split(/\s+/).filter(Boolean).length;
-  }, [content]);
 
   // Check if editor content is visually empty
   const isEditorEmpty = useMemo(() => {
@@ -709,8 +781,40 @@ export function DiaryDrawer({
     updateActiveFormats();
   };
 
-  // Handle paste in contentEditable editor
+  // Handle paste in contentEditable editor (text markdown & pasted images)
   const handleEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    // 1. Check for pasted image files (screenshots or copied images)
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            e.preventDefault();
+            triggerHaptic('light');
+            setIsSavedJustNow(false);
+            const reader = new FileReader();
+            reader.onload = () => {
+              if (typeof reader.result === 'string') {
+                const imgData = reader.result as string;
+                setImages((prev) => {
+                  if (prev.length === 0) {
+                    setImageAlign('left');
+                    setImageWidthPercent(48);
+                    setImageHeight(240);
+                  }
+                  return [...prev, imgData];
+                });
+              }
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        }
+      }
+    }
+
+    // 2. Handle styled text paste
     const text = e.clipboardData.getData('text/plain');
     if (text && (text.includes('**') || text.includes('*') || text.includes('> ') || text.includes('- '))) {
       e.preventDefault();
@@ -900,12 +1004,18 @@ export function DiaryDrawer({
 
   // Save handler: requires title, saves, and closes the drawer
   const handleSave = () => {
-    if (!note) return;
-    if (!title.trim()) {
-      setTitleError(true);
-      titleInputRef.current?.focus();
-      triggerHaptic('warning');
-      return;
+    let finalTitle = title.trim();
+    if (!finalTitle) {
+      const editorText = editorRef.current?.innerText?.trim() || content.trim();
+      if (editorText) {
+        finalTitle = 'Diary Entry';
+        setTitle('Diary Entry');
+      } else {
+        setTitleError(true);
+        titleInputRef.current?.focus();
+        triggerHaptic('warning');
+        return;
+      }
     }
     triggerHaptic('medium');
     let finalContent = editorRef.current ? editorRef.current.innerHTML : content;
@@ -914,27 +1024,59 @@ export function DiaryDrawer({
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
         .replace(/ style="(?!color:[^"]*)[^"]*"/gi, '');
     }
-    const updated: NoteItem = {
-      ...note,
-      title: title.trim(),
-      content: finalContent,
-      date: currentDate,
-      todayDate: currentDate,
-      mood: currentMood,
-      images,
-      imageHeight,
-      imageWidthPercent,
-      imageFit,
-      voiceNotes,
-      hasVoiceNote: voiceNotes.length > 0,
-      voiceAudioUrl: voiceNotes[0]?.audioUrl,
-      voiceDuration: voiceNotes[0]?.duration,
-      imageUrl: images[0],
-      isDiary: true,
-      entryType: 'diary',
-    };
 
-    onUpdateNote?.(updated);
+    if (note) {
+      const updated: NoteItem = {
+        ...note,
+        title: finalTitle,
+        content: finalContent,
+        date: currentDate,
+        todayDate: currentDate,
+        mood: currentMood,
+        images,
+        imageHeight,
+        imageWidthPercent,
+        imageFit,
+        imageAlign,
+        voiceNotes,
+        hasVoiceNote: voiceNotes.length > 0,
+        voiceAudioUrl: voiceNotes[0]?.audioUrl,
+        voiceDuration: voiceNotes[0]?.duration,
+        imageUrl: images[0],
+        isDiary: true,
+        entryType: 'diary',
+      };
+
+      onUpdateNote?.(updated);
+    } else {
+      const newEntry: NoteItem = {
+        id: `diary-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        title: finalTitle,
+        content: finalContent,
+        date: currentDate,
+        todayDate: currentDate,
+        mood: currentMood,
+        images,
+        imageHeight,
+        imageWidthPercent,
+        imageFit,
+        imageAlign,
+        voiceNotes,
+        hasVoiceNote: voiceNotes.length > 0,
+        voiceAudioUrl: voiceNotes[0]?.audioUrl,
+        voiceDuration: voiceNotes[0]?.duration,
+        imageUrl: images[0],
+        isDiary: true,
+        entryType: 'diary',
+      };
+
+      if (onSaveNewNote) {
+        onSaveNewNote(newEntry);
+      } else if (onUpdateNote) {
+        onUpdateNote(newEntry);
+      }
+    }
+
     setIsSavedJustNow(true);
     onClose();
   };
@@ -951,7 +1093,16 @@ export function DiaryDrawer({
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          setImages((prev) => [...prev, reader.result as string]);
+          const newImg = reader.result as string;
+          setImages((prev) => {
+            if (prev.length === 0) {
+              // Default to float left with proportional width so text flows on the right immediately
+              setImageAlign('left');
+              setImageWidthPercent(48);
+              setImageHeight(240);
+            }
+            return [...prev, newImg];
+          });
         }
       };
       reader.readAsDataURL(file);
@@ -961,14 +1112,20 @@ export function DiaryDrawer({
 
   // Remove photo
   const handleRemovePhoto = (index: number) => {
+    setIsImageMenuOpen(false);
     triggerHaptic('light');
     setIsSavedJustNow(false);
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Interactive drag resize handler for attached image(s)
-  const handleStartImageResize = (e: React.PointerEvent<HTMLDivElement>) => {
+  // Interactive drag resize handler for attached image(s) via all 4 corners & bottom edge
+  type ResizeDirection = 'nw' | 'ne' | 'se' | 'sw' | 's';
+
+  const handleStartImageResize = (
+    direction: ResizeDirection,
+    e: React.PointerEvent<HTMLDivElement>
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     setIsResizingImage(true);
@@ -982,14 +1139,50 @@ export function DiaryDrawer({
       // ignore
     }
 
+    const startX = e.clientX;
     const startY = e.clientY;
     const startHeight = imageHeight;
 
+    const wrapperEl = imageWrapperRef.current;
+    const parentEl = wrapperEl?.parentElement;
+    const parentWidth = parentEl?.getBoundingClientRect().width || 600;
+    const startWidthPx =
+      wrapperEl?.getBoundingClientRect().width ||
+      (parentWidth * (imageWidthPercent / 100));
+
     const handlePointerMove = (moveEv: PointerEvent) => {
       if (moveEv.pointerId !== pointerId) return;
+
+      const deltaX = moveEv.clientX - startX;
       const deltaY = moveEv.clientY - startY;
-      const nextH = Math.max(140, Math.min(720, Math.round(startHeight + deltaY)));
-      setImageHeight(nextH);
+
+      // 1. Height adjustment across all 4 corners and bottom edge
+      let newHeight = startHeight;
+      if (direction === 's' || direction === 'se' || direction === 'sw') {
+        newHeight = startHeight + deltaY;
+      } else if (direction === 'nw' || direction === 'ne') {
+        newHeight = startHeight - deltaY;
+      }
+      setImageHeight(Math.max(100, Math.min(850, Math.round(newHeight))));
+
+      // 2. Width adjustment across all 4 corners
+      if (direction !== 's') {
+        let newWidthPx = startWidthPx;
+        if (direction === 'se' || direction === 'ne') {
+          newWidthPx = startWidthPx + deltaX;
+        } else if (direction === 'sw' || direction === 'nw') {
+          newWidthPx = startWidthPx - deltaX;
+        }
+
+        const minPct = imageAlign === 'center' ? 25 : 20;
+        const maxPct = imageAlign === 'center' ? 100 : 85;
+        const newPercent = Math.max(
+          minPct,
+          Math.min(maxPct, Math.round((newWidthPx / parentWidth) * 100))
+        );
+        setImageWidthPercent(newPercent);
+      }
+
       setIsSavedJustNow(false);
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
@@ -1117,9 +1310,26 @@ export function DiaryDrawer({
     }
   };
 
+  // Insert current timestamp helper
+  const handleInsertTimestamp = () => {
+    triggerHaptic('light');
+    setIsQuickAddOpen(false);
+    setIsSavedJustNow(false);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const addition = `<p><strong>${timeStr}</strong> - </p>`;
+    const next = (content ? content + '<br/>' : '') + addition;
+    setContent(next);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = next;
+      editorRef.current.focus();
+    }
+  };
+
   return (
     <AnimatePresence>
-      {isOpen && note && (
+      {isOpen && (
         <div
           style={{
             paddingBottom: !isDesktop && keyboardOffset > 0 ? `${keyboardOffset}px` : undefined,
@@ -1476,37 +1686,43 @@ export function DiaryDrawer({
 
                 {/* Mood Tag/Picker Pill right by the date */}
                 <div className="relative shrink-0" ref={moodPickerRef}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setIsMoodPickerOpen((prev) => !prev);
-                    }}
-                    className={`h-8 px-2.5 sm:px-3 rounded-full inline-flex items-center gap-1.5 text-xs font-medium transition-all active:scale-95 cursor-pointer ${
-                      currentMood
-                        ? isDark
-                          ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 shadow-2xs'
-                          : 'bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 shadow-2xs'
-                        : isDark
-                        ? 'bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-700/50'
-                        : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-600 border border-neutral-200/80'
-                    }`}
-                    title="Change entry mood"
-                  >
-                    {currentMood ? (
-                      <>
-                        <span className="text-sm select-none">{currentMood}</span>
-                        <span className="hidden sm:inline-block font-medium">
-                          {MOOD_OPTIONS.find((m) => m.emoji === currentMood)?.label || 'Mood'}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Smile className="w-3.5 h-3.5 opacity-70" />
-                        <span className="hidden sm:inline-block font-medium">Mood</span>
-                      </>
-                    )}
-                  </button>
+                  {(() => {
+                    const activeMood = findMood(currentMood);
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          if (!isMoodPickerOpen) {
+                            updateMoodPopoverPosition();
+                          }
+                          setIsMoodPickerOpen((prev) => !prev);
+                        }}
+                        className={`h-8 px-2.5 sm:px-3 rounded-full inline-flex items-center gap-1.5 text-xs font-medium transition-all active:scale-95 cursor-pointer ${
+                          activeMood
+                            ? isDark
+                              ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 shadow-2xs'
+                              : 'bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 shadow-2xs'
+                            : isDark
+                            ? 'bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-700/50'
+                            : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-600 border border-neutral-200/80'
+                        }`}
+                        title="Change entry mood"
+                      >
+                        {activeMood ? (
+                          <>
+                            <span className="text-sm select-none leading-none">{activeMood.emoji}</span>
+                            <span className="font-semibold text-xs leading-none">{activeMood.label}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Smile className="w-3.5 h-3.5 opacity-70" />
+                            <span className="font-medium text-xs">Mood</span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()}
 
                   {/* Mood Picker Popover */}
                   <AnimatePresence>
@@ -1515,51 +1731,71 @@ export function DiaryDrawer({
                         initial={{ opacity: 0, y: 6, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 6, scale: 0.95 }}
-                        className={`absolute left-0 top-full mt-2 w-64 p-3 rounded-2xl border shadow-2xl z-50 ${
+                        style={{
+                          left: isDesktop ? 0 : `${moodPopoverOffset}px`,
+                        }}
+                        className={`absolute top-full mt-2 w-72 sm:w-80 max-w-[calc(100vw-2rem)] p-3 rounded-2xl border shadow-2xl z-50 ${
                           isDark
                             ? 'bg-[#18181c] border-neutral-800 text-white shadow-black/80'
                             : 'bg-white border-neutral-200 text-neutral-900 shadow-xl'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-neutral-400">Select Mood</span>
+                        <div className="flex items-center justify-between pb-1.5 mb-1 px-0.5">
+                          <div>
+                            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">Select Mood</span>
+                            <p className="text-[10px] text-neutral-400">Choose how you're feeling</p>
+                          </div>
                           {currentMood && (
                             <button
                               type="button"
                               onClick={() => {
+                                triggerHaptic('light');
                                 setCurrentMood(undefined);
                                 setIsMoodPickerOpen(false);
+                                setIsSavedJustNow(false);
+                                if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
                               }}
-                              className="text-[11px] text-rose-400 hover:underline cursor-pointer"
+                              className="text-[11px] text-rose-500 hover:text-rose-400 font-medium px-2 py-0.5 rounded-md hover:bg-rose-500/10 transition-colors cursor-pointer"
                             >
                               Clear
                             </button>
                           )}
                         </div>
-                        <div className="grid grid-cols-5 gap-1.5">
-                          {MOOD_OPTIONS.map((opt) => (
-                            <button
-                              key={`mood-opt-${opt.label}`}
-                              type="button"
-                              onClick={() => {
-                                triggerHaptic('selection');
-                                setCurrentMood(opt.emoji);
-                                setIsMoodPickerOpen(false);
-                              }}
-                              className={`p-2 rounded-xl text-lg flex items-center justify-center transition-all cursor-pointer ${
-                                currentMood === opt.emoji
-                                  ? isDark
-                                    ? 'bg-purple-500/30 ring-2 ring-purple-400 scale-105'
-                                    : 'bg-purple-100 ring-2 ring-purple-500 scale-105'
-                                  : isDark
-                                  ? 'hover:bg-neutral-800'
-                                  : 'hover:bg-neutral-100'
-                              }`}
-                              title={opt.label}
-                            >
-                              {opt.emoji}
-                            </button>
-                          ))}
+                        <div className="grid grid-cols-2 gap-1.5 max-h-72 overflow-y-auto pr-0.5">
+                          {MOOD_OPTIONS.map((opt) => {
+                            const isSelected =
+                              currentMood === opt.emoji ||
+                              currentMood === opt.label ||
+                              currentMood?.toLowerCase() === opt.label.toLowerCase();
+                            return (
+                              <button
+                                key={`mood-opt-${opt.label}`}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('selection');
+                                  setCurrentMood(opt.label);
+                                  setIsMoodPickerOpen(false);
+                                  setIsSavedJustNow(false);
+                                  if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+                                }}
+                                className={`flex items-center gap-2 p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                                  isSelected
+                                    ? isDark
+                                      ? 'bg-purple-500/20 border-purple-500/60 text-purple-200 ring-1 ring-purple-500/50'
+                                      : 'bg-purple-50 border-purple-300 text-purple-900 ring-1 ring-purple-400'
+                                    : isDark
+                                    ? 'border-transparent hover:bg-neutral-800/80 hover:border-neutral-700/60 text-neutral-300'
+                                    : 'border-transparent hover:bg-neutral-100 hover:border-neutral-200 text-neutral-700'
+                                }`}
+                              >
+                                <span className="text-xl shrink-0 select-none">{opt.emoji}</span>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold leading-tight truncate">{opt.label}</div>
+                                  <div className="text-[10px] text-neutral-400 leading-tight truncate">{opt.desc}</div>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       </motion.div>
                     )}
@@ -1598,14 +1834,14 @@ export function DiaryDrawer({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 6 }}
                         transition={{ duration: 0.14, ease: 'easeOut' }}
-                        className={`absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2.5rem)] origin-top-right rounded-2xl border shadow-2xl p-2 z-50 ${
+                        className={`absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2.5rem)] origin-top-right rounded-2xl border shadow-2xl p-2.5 z-50 ${
                           isDark
                             ? 'bg-[#18181b] border-neutral-800 text-white shadow-black/80'
                             : 'bg-white border-neutral-200 text-neutral-900 shadow-xl'
                         }`}
                       >
                         {/* Section 1: Mood Selector */}
-                        <div className="px-2 pt-1 pb-2">
+                        <div className="px-1 pt-1 pb-2">
                           <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">
                             <span>Mood</span>
                             {currentMood && (
@@ -1623,29 +1859,38 @@ export function DiaryDrawer({
                               </button>
                             )}
                           </div>
-                          <div className="grid grid-cols-5 gap-1.5">
-                            {MOOD_OPTIONS.map((opt) => (
-                              <button
-                                key={`more-mood-${opt.label}`}
-                                type="button"
-                                onClick={() => {
-                                  triggerHaptic('selection');
-                                  setIsSavedJustNow(false);
-                                  if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-                                  setCurrentMood(currentMood === opt.emoji ? undefined : opt.emoji);
-                                }}
-                                className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition-all cursor-pointer ${
-                                  currentMood === opt.emoji
-                                    ? 'bg-purple-600/30 ring-2 ring-purple-500 scale-105'
-                                    : isDark
-                                    ? 'bg-[#222226] hover:bg-[#2c2c32]'
-                                    : 'bg-neutral-100 hover:bg-neutral-200'
-                                }`}
-                                title={opt.label}
-                              >
-                                {opt.emoji}
-                              </button>
-                            ))}
+                          <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                            {MOOD_OPTIONS.map((opt) => {
+                              const isSelected =
+                                currentMood === opt.emoji ||
+                                currentMood === opt.label ||
+                                currentMood?.toLowerCase() === opt.label.toLowerCase();
+                              return (
+                                <button
+                                  key={`more-mood-${opt.label}`}
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('selection');
+                                    setIsSavedJustNow(false);
+                                    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+                                    setCurrentMood(isSelected ? undefined : opt.label);
+                                  }}
+                                  className={`flex items-center gap-2 p-1.5 rounded-xl text-left transition-all cursor-pointer border ${
+                                    isSelected
+                                      ? 'bg-purple-600/20 border-purple-500/50 text-purple-200'
+                                      : isDark
+                                      ? 'border-transparent bg-[#222226] hover:bg-[#2c2c32] text-neutral-300'
+                                      : 'border-transparent bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                                  }`}
+                                >
+                                  <span className="text-lg shrink-0 select-none">{opt.emoji}</span>
+                                  <div className="min-w-0">
+                                    <div className="text-[11px] font-semibold leading-tight truncate">{opt.label}</div>
+                                    <div className="text-[9px] text-neutral-400 leading-tight truncate">{opt.desc}</div>
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -1704,7 +1949,7 @@ export function DiaryDrawer({
 
                         {/* Section 3: Note Actions */}
                         <div className="space-y-0.5">
-                          {onToggleFavorite && (
+                          {note && onToggleFavorite && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1747,7 +1992,7 @@ export function DiaryDrawer({
                             <span>{copied ? 'Copied!' : 'Copy Content'}</span>
                           </button>
 
-                          {onDelete && (
+                          {note && onDelete && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1762,6 +2007,44 @@ export function DiaryDrawer({
                               <span>Delete Entry</span>
                             </button>
                           )}
+
+                          {onSwitchFormat && (
+                            <div className="border-t border-neutral-200/50 dark:border-neutral-800/80 pt-1.5 mt-1.5">
+                              <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2.5 py-1">
+                                Switch Format
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('selection');
+                                  setIsMoreMenuOpen(false);
+                                  onClose();
+                                  onSwitchFormat('notes', { title, content: editorRef.current ? editorRef.current.innerHTML : content });
+                                }}
+                                className={`w-full px-2.5 py-2 rounded-xl flex items-center gap-2.5 text-xs font-medium transition-colors cursor-pointer ${
+                                  isDark ? 'hover:bg-neutral-800 text-neutral-200' : 'hover:bg-neutral-100 text-neutral-800'
+                                }`}
+                              >
+                                <Feather className="w-3.5 h-3.5 text-sky-400" />
+                                <span>Switch to Note</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('selection');
+                                  setIsMoreMenuOpen(false);
+                                  onClose();
+                                  onSwitchFormat('todo', { title, content: editorRef.current ? editorRef.current.innerHTML : content });
+                                }}
+                                className={`w-full px-2.5 py-2 rounded-xl flex items-center gap-2.5 text-xs font-medium transition-colors cursor-pointer ${
+                                  isDark ? 'hover:bg-neutral-800 text-neutral-200' : 'hover:bg-neutral-100 text-neutral-800'
+                                }`}
+                              >
+                                <ListTodo className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Switch to Todo</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     )}
@@ -1772,11 +2055,9 @@ export function DiaryDrawer({
                 <button
                   type="button"
                   onClick={handleSave}
-                  className={`h-8 sm:h-9 px-3.5 sm:px-4 rounded-full font-medium text-xs sm:text-sm flex items-center gap-1.5 active:scale-95 transition-all shadow-xs cursor-pointer select-none shrink-0 ${
+                  className={`h-8 sm:h-9 px-3.5 sm:px-4 rounded-full font-semibold text-xs sm:text-sm flex items-center gap-1.5 active:scale-95 transition-all shadow-xs cursor-pointer select-none shrink-0 ${
                     isSavedJustNow
-                      ? isDark
-                        ? 'bg-neutral-200 text-neutral-900 font-semibold'
-                        : 'bg-neutral-800 text-white font-semibold'
+                      ? 'bg-white text-neutral-900 shadow-sm ring-1 ring-neutral-200 dark:ring-white/20'
                       : isDark
                       ? 'bg-white text-neutral-950 hover:bg-neutral-100 shadow-sm'
                       : 'bg-neutral-900 text-white hover:bg-neutral-800 shadow-sm'
@@ -1784,8 +2065,8 @@ export function DiaryDrawer({
                 >
                   {isSavedJustNow ? (
                     <>
-                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                      <span>Saved</span>
+                      <Check className="w-3.5 h-3.5 stroke-[2.5] text-emerald-600" />
+                      <span>Save</span>
                     </>
                   ) : (
                     <>
@@ -1793,6 +2074,23 @@ export function DiaryDrawer({
                       <span>Save</span>
                     </>
                   )}
+                </button>
+
+                {/* Close Button (✕) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onClose();
+                  }}
+                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0 ${
+                    isDark
+                      ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                      : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'
+                  }`}
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -1848,286 +2146,6 @@ export function DiaryDrawer({
                   <span className="text-xs text-rose-500 font-medium">Title is required</span>
                 )}
               </div>
-
-              {/* Attached Photos (with interactive resizing, width options & gorgeous rounded corners) */}
-              {images.length > 0 && (
-                <div className="my-2 space-y-2">
-                  {images.length === 1 ? (
-                    <div
-                      className="relative mx-auto transition-[width] duration-200"
-                      style={{
-                        width: `${imageWidthPercent}%`,
-                        maxWidth: '100%',
-                      }}
-                    >
-                      <div
-                        className={`relative w-full rounded-2xl sm:rounded-3xl overflow-hidden border transition-all duration-150 group select-none ${
-                          isResizingImage
-                            ? 'ring-2 ring-purple-500 shadow-xl border-purple-500/50'
-                            : 'border-neutral-200/80 dark:border-white/10 shadow-sm sm:shadow-md'
-                        } bg-neutral-900/5 dark:bg-neutral-900/50`}
-                        style={{
-                          height: `${imageHeight}px`,
-                        }}
-                      >
-                        <img
-                          src={images[0]}
-                          alt="Diary visual memory"
-                          onClick={() => !isResizingImage && setLightboxSrc(images[0])}
-                          className="w-full h-full cursor-pointer transition-transform duration-300 group-hover:scale-[1.01]"
-                          style={{ objectFit: imageFit }}
-                          loading="lazy"
-                        />
-
-                        {/* Top floating control toolbar */}
-                        <div className="absolute top-2.5 inset-x-2.5 flex items-center justify-between gap-2 z-10 pointer-events-none">
-                          {/* Quick Height & Width Presets Pill */}
-                          <div className="flex items-center gap-1 p-1 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md text-white shadow-lg pointer-events-auto transition-opacity opacity-90 sm:opacity-0 group-hover:opacity-100">
-                            {/* Height Presets */}
-                            {(
-                              [
-                                { label: 'S', h: 180, title: 'Small (180px)' },
-                                { label: 'M', h: 320, title: 'Medium (320px)' },
-                                { label: 'L', h: 460, title: 'Large (460px)' },
-                              ] as const
-                            ).map((preset) => (
-                              <button
-                                key={preset.label}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  triggerHaptic('light');
-                                  setImageHeight(preset.h);
-                                  setIsSavedJustNow(false);
-                                  if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-                                }}
-                                className={`w-6 h-6 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center ${
-                                  Math.abs(imageHeight - preset.h) < 30
-                                    ? 'bg-purple-600 text-white shadow-xs'
-                                    : 'hover:bg-white/20 text-white/80'
-                                }`}
-                                title={preset.title}
-                              >
-                                {preset.label}
-                              </button>
-                            ))}
-
-                            <div className="w-px h-3.5 bg-white/20 my-auto" />
-
-                            {/* Width Presets */}
-                            {(
-                              [
-                                { label: '50%', w: 50 },
-                                { label: '75%', w: 75 },
-                                { label: '100%', w: 100 },
-                              ] as const
-                            ).map((wp) => (
-                              <button
-                                key={wp.label}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  triggerHaptic('light');
-                                  setImageWidthPercent(wp.w);
-                                  setIsSavedJustNow(false);
-                                  if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-                                }}
-                                className={`px-1.5 h-6 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center ${
-                                  imageWidthPercent === wp.w
-                                    ? 'bg-purple-600 text-white shadow-xs'
-                                    : 'hover:bg-white/20 text-white/80'
-                                }`}
-                                title={`Width: ${wp.label}`}
-                              >
-                                {wp.label}
-                              </button>
-                            ))}
-
-                            <div className="w-px h-3.5 bg-white/20 my-auto" />
-
-                            {/* Fit / Cover toggle */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerHaptic('light');
-                                setImageFit((prev) => (prev === 'cover' ? 'contain' : 'cover'));
-                                setIsSavedJustNow(false);
-                                if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-                              }}
-                              className="px-1.5 h-6 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center hover:bg-white/20 text-white/80"
-                              title={imageFit === 'cover' ? 'Switch to Fit (show full photo)' : 'Switch to Cover (fill container)'}
-                            >
-                              {imageFit === 'cover' ? 'Fit' : 'Cover'}
-                            </button>
-                          </div>
-
-                          {/* Right actions: Lightbox + Delete */}
-                          <div className="flex items-center gap-1.5 pointer-events-auto opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setLightboxSrc(images[0]);
-                              }}
-                              className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
-                              title="View full size"
-                            >
-                              <Maximize2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemovePhoto(0);
-                              }}
-                              className="w-7 h-7 rounded-full bg-black/60 hover:bg-rose-600 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
-                              title="Remove photo"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Bottom Drag Handle for Interactive Height Resizing */}
-                        <div
-                          onPointerDown={handleStartImageResize}
-                          className={`absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full backdrop-blur-md shadow-lg transition-all cursor-ns-resize touch-none select-none z-20 ${
-                            isResizingImage
-                              ? 'bg-purple-600 text-white scale-105 shadow-purple-500/40'
-                              : 'bg-black/65 hover:bg-black/85 text-white/90 opacity-90 sm:opacity-75 group-hover:opacity-100 hover:scale-105'
-                          }`}
-                          title="Drag up or down to resize image"
-                        >
-                          <ArrowUpDown className="w-3 h-3 text-purple-300" />
-                          <span className="text-[10px] font-bold font-mono tracking-tight">{imageHeight}px</span>
-                          <span className="text-[9px] text-white/60 hidden sm:inline">• Drag to resize</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {/* Grid controls bar */}
-                      <div className="flex items-center justify-between px-1">
-                        <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800/80 p-0.5 rounded-lg border border-neutral-200/50 dark:border-white/5">
-                          <button
-                            type="button"
-                            onClick={() => setImageGridCols(1)}
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
-                              imageGridCols === 1
-                                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs'
-                                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
-                            }`}
-                          >
-                            1 Col
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setImageGridCols(2)}
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
-                              imageGridCols === 2
-                                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs'
-                                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
-                            }`}
-                          >
-                            2 Cols
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setImageGridCols(3)}
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
-                              imageGridCols === 3
-                                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs'
-                                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
-                            }`}
-                          >
-                            3 Cols
-                          </button>
-                        </div>
-
-                        {/* Height Presets for Grid */}
-                        <div className="flex items-center gap-1">
-                          {(
-                            [
-                              { label: 'Compact', h: 160 },
-                              { label: 'Medium', h: 240 },
-                              { label: 'Large', h: 360 },
-                            ] as const
-                          ).map((pr) => (
-                            <button
-                              key={pr.label}
-                              type="button"
-                              onClick={() => {
-                                triggerHaptic('light');
-                                setImageHeight(pr.h);
-                              }}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
-                                Math.abs(imageHeight - pr.h) < 30
-                                  ? 'bg-purple-600 text-white'
-                                  : isDark
-                                  ? 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                                  : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
-                              }`}
-                            >
-                              {pr.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Image Grid */}
-                      <div
-                        className={`grid gap-2.5 ${
-                          imageGridCols === 1
-                            ? 'grid-cols-1'
-                            : imageGridCols === 3
-                            ? 'grid-cols-2 sm:grid-cols-3'
-                            : 'grid-cols-2'
-                        }`}
-                      >
-                        {images.map((imgSrc, idx) => (
-                          <div
-                            key={`attached-img-${idx}`}
-                            style={{ height: `${imageHeight}px` }}
-                            className="relative rounded-2xl overflow-hidden border border-neutral-200/80 dark:border-white/10 shadow-xs group bg-neutral-900/5 dark:bg-neutral-900/50"
-                          >
-                            <img
-                              src={imgSrc}
-                              alt={`Attachment ${idx + 1}`}
-                              onClick={() => setLightboxSrc(imgSrc)}
-                              className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform duration-300"
-                              loading="lazy"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemovePhoto(idx);
-                              }}
-                              className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 hover:bg-rose-600 text-white flex items-center justify-center opacity-90 sm:opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-xs"
-                              title="Remove photo"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Drag handle for grid */}
-                      <div className="flex justify-center pt-1">
-                        <div
-                          onPointerDown={handleStartImageResize}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 shadow-2xs cursor-ns-resize select-none touch-none text-[10px] font-medium"
-                          title="Drag to adjust grid photo height"
-                        >
-                          <ArrowUpDown className="w-3 h-3 text-purple-500" />
-                          <span>Height: {imageHeight}px (Drag to resize)</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Voice Notes Strip (if any) */}
               {voiceNotes.length > 0 && (
@@ -2221,18 +2239,307 @@ export function DiaryDrawer({
                 </div>
               )}
 
-              {/* Main Journal Writing Canvas with Auto-Markdown */}
-              <div className="relative flex-1 min-h-[280px] flex flex-col pt-1">
-                {isEditorEmpty && (
+              {/* Main Journal Writing Canvas with In-Flow Visual Media (Text flows around image anywhere) */}
+              <div className="relative flex-1 min-h-[320px] w-full pt-1">
+                {/* Visual Media directly in-flow with content */}
+                {images.length > 0 && (
                   <div
-                    onClick={() => editorRef.current?.focus()}
-                    className={`absolute inset-0 pointer-events-none text-base sm:text-lg leading-relaxed font-normal select-none ${
-                      isDark ? 'text-neutral-600' : 'text-neutral-400'
+                    ref={imageWrapperRef}
+                    className={`relative select-none transition-all duration-75 ${
+                      imageAlign === 'center'
+                        ? 'mx-auto mb-4 block clear-both'
+                        : imageAlign === 'right'
+                        ? 'float-right ml-4 sm:ml-6 mb-3 clear-right'
+                        : 'float-left mr-4 sm:mr-6 mb-3 clear-left'
                     }`}
+                    style={{
+                      width: imageAlign === 'center' ? `${imageWidthPercent}%` : `${Math.min(imageWidthPercent, 85)}%`,
+                      maxWidth: imageAlign === 'center' ? '100%' : '85%',
+                      minWidth: '140px',
+                    }}
                   >
-                    Dear Diary, write your thoughts, memories, reflections, or moments here...
+                    {images.length === 1 ? (
+                      <div className="relative group/imgbox">
+                        <div
+                          className={`relative w-full rounded-2xl overflow-hidden border transition-all duration-150 select-none ${
+                            isResizingImage
+                              ? 'ring-2 ring-neutral-400 dark:ring-neutral-500 shadow-lg border-neutral-400 dark:border-neutral-500'
+                              : 'border-neutral-200/80 dark:border-white/10 shadow-sm'
+                          } bg-neutral-900/5 dark:bg-neutral-900/50`}
+                          style={{
+                            height: `${imageHeight}px`,
+                          }}
+                        >
+                          <img
+                            src={images[0]}
+                            alt="Diary visual memory"
+                            onClick={() => !isResizingImage && setLightboxSrc(images[0])}
+                            className="w-full h-full cursor-pointer transition-transform duration-300 group-hover/imgbox:scale-[1.01]"
+                            style={{ objectFit: imageFit }}
+                            loading="lazy"
+                          />
+
+                          {/* Top-Right "More" Options Button & Minimal Horizontal Floating Pill Toolbar */}
+                          <div ref={imageMenuRef} className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-30 select-none">
+                            {/* Minimal Horizontal Pill Toolbar (revealed when More is clicked, completely inside the image) */}
+                            {isImageMenuOpen && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-0.5 p-1 rounded-full bg-black/80 dark:bg-black/90 text-white backdrop-blur-md shadow-xl border border-white/15 animate-in fade-in slide-in-from-right-2 duration-150"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('light');
+                                    setImageAlign('left');
+                                    setImageWidthPercent((prev) => (prev > 70 ? 48 : prev));
+                                  }}
+                                  className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                                    imageAlign === 'left' ? 'bg-white/25 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/10'
+                                  }`}
+                                  title="Float Left (text on right)"
+                                >
+                                  <AlignLeft className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('light');
+                                    setImageAlign('center');
+                                  }}
+                                  className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                                    imageAlign === 'center' ? 'bg-white/25 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/10'
+                                  }`}
+                                  title="Center"
+                                >
+                                  <AlignCenter className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('light');
+                                    setImageAlign('right');
+                                    setImageWidthPercent((prev) => (prev > 70 ? 48 : prev));
+                                  }}
+                                  className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                                    imageAlign === 'right' ? 'bg-white/25 text-white' : 'text-neutral-300 hover:text-white hover:bg-white/10'
+                                  }`}
+                                  title="Float Right (text on left)"
+                                >
+                                  <AlignRight className="w-3.5 h-3.5" />
+                                </button>
+
+                                <div className="w-px h-3 bg-white/20 mx-0.5" />
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsImageMenuOpen(false);
+                                    triggerHaptic('light');
+                                    setLightboxSrc(images[0]);
+                                  }}
+                                  className="p-1.5 rounded-full text-neutral-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                  title="View full size"
+                                >
+                                  <Maximize2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsImageMenuOpen(false);
+                                    triggerHaptic('medium');
+                                    handleRemovePhoto(0);
+                                  }}
+                                  className="p-1.5 rounded-full text-neutral-300 hover:text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                                  title="Remove image"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+
+                            {/* More Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic('light');
+                                setIsImageMenuOpen((prev) => !prev);
+                              }}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-md backdrop-blur-md ${
+                                isImageMenuOpen
+                                  ? 'bg-white text-neutral-900 shadow-lg scale-105'
+                                  : 'bg-black/60 hover:bg-black/80 text-white'
+                              }`}
+                              title="Image options"
+                              aria-label="Image options"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* All 4 Corner Resize Hitboxes (Functional drag-to-resize, zero visible dots) */}
+                        {/* 1. Top-Left (NW) */}
+                        <div
+                          onPointerDown={(e) => handleStartImageResize('nw', e)}
+                          className="absolute -top-3 -left-3 w-8 h-8 cursor-nwse-resize touch-none z-20"
+                          title="Drag corner to resize"
+                        />
+
+                        {/* 2. Top-Right (NE) */}
+                        <div
+                          onPointerDown={(e) => handleStartImageResize('ne', e)}
+                          className="absolute -top-3 -right-3 w-8 h-8 cursor-nesw-resize touch-none z-20"
+                          title="Drag corner to resize"
+                        />
+
+                        {/* 3. Bottom-Left (SW) */}
+                        <div
+                          onPointerDown={(e) => handleStartImageResize('sw', e)}
+                          className="absolute -bottom-3 -left-3 w-8 h-8 cursor-nesw-resize touch-none z-20"
+                          title="Drag corner to resize"
+                        />
+
+                        {/* 4. Bottom-Right (SE) */}
+                        <div
+                          onPointerDown={(e) => handleStartImageResize('se', e)}
+                          className="absolute -bottom-3 -right-3 w-8 h-8 cursor-nwse-resize touch-none z-20"
+                          title="Drag corner to resize"
+                        />
+
+                        {/* Clean Bottom Edge Drag Handle (Functional, invisible hit area) */}
+                        <div
+                          onPointerDown={(e) => handleStartImageResize('s', e)}
+                          className="absolute -bottom-3 inset-x-8 h-6 cursor-s-resize touch-none z-20"
+                          title="Drag bottom to adjust height"
+                        />
+                      </div>
+                    ) : (
+                      /* Multiple Images Grid */
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800/80 p-0.5 rounded-lg border border-neutral-200/50 dark:border-white/5">
+                            <button
+                              type="button"
+                              onClick={() => setImageGridCols(1)}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
+                                imageGridCols === 1
+                                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs'
+                                  : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                              }`}
+                            >
+                              1 Col
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setImageGridCols(2)}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
+                                imageGridCols === 2
+                                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs'
+                                  : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                              }`}
+                            >
+                              2 Cols
+                            </button>
+                            {images.length > 2 && (
+                              <button
+                                type="button"
+                                onClick={() => setImageGridCols(3)}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
+                                  imageGridCols === 3
+                                    ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs'
+                                    : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                                }`}
+                              >
+                                3 Cols
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-0.5 bg-neutral-100 dark:bg-neutral-800/80 p-0.5 rounded-lg border border-neutral-200/50 dark:border-white/5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImageAlign('left');
+                                setImageWidthPercent((prev) => (prev > 70 ? 55 : prev));
+                              }}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                imageAlign === 'left' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs' : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                              }`}
+                              title="Float Left (text on right)"
+                            >
+                              <AlignLeft className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setImageAlign('center')}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                imageAlign === 'center' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs' : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                              }`}
+                              title="Center"
+                            >
+                              <AlignCenter className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImageAlign('right');
+                                setImageWidthPercent((prev) => (prev > 70 ? 55 : prev));
+                              }}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                imageAlign === 'right' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-2xs' : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                              }`}
+                              title="Float Right (text on left)"
+                            >
+                              <AlignRight className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`grid gap-2.5 ${
+                            imageGridCols === 1
+                              ? 'grid-cols-1'
+                              : imageGridCols === 3
+                              ? 'grid-cols-2 sm:grid-cols-3'
+                              : 'grid-cols-2'
+                          }`}
+                        >
+                          {images.map((imgSrc, idx) => (
+                            <div
+                              key={`attached-img-${idx}`}
+                              style={{ height: `${imageHeight}px` }}
+                              className="relative rounded-2xl overflow-hidden border border-neutral-200/80 dark:border-white/10 shadow-xs group bg-neutral-900/5 dark:bg-neutral-900/50"
+                            >
+                              <img
+                                src={imgSrc}
+                                alt={`Attachment ${idx + 1}`}
+                                onClick={() => setLightboxSrc(imgSrc)}
+                                className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform duration-300"
+                                loading="lazy"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemovePhoto(idx);
+                                }}
+                                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 hover:bg-rose-600 text-white flex items-center justify-center opacity-90 sm:opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-xs"
+                                title="Remove photo"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Main Journal Writing Canvas with In-Flow Placeholder */}
                 <div
                   ref={editorRef}
                   contentEditable
@@ -2243,20 +2550,132 @@ export function DiaryDrawer({
                   onSelect={updateActiveFormats}
                   onKeyUp={updateActiveFormats}
                   onMouseUp={updateActiveFormats}
-                  className={`w-full flex-1 bg-transparent border-none outline-hidden resize-none text-base sm:text-lg leading-relaxed font-normal transition-colors focus:outline-none min-h-[260px] ${
+                  data-placeholder="Dear Diary, write your thoughts, memories, reflections, or moments here..."
+                  data-empty={isEditorEmpty ? "true" : "false"}
+                  className={`diary-editor-placeholder w-full min-h-[260px] bg-transparent border-none outline-hidden resize-none text-base sm:text-lg leading-relaxed font-normal transition-colors focus:outline-none pb-32 ${
                     isDark ? 'text-neutral-200' : 'text-neutral-800'
                   }`}
                   style={{ minHeight: '260px' }}
                 />
+
+                <div className="clear-both" />
               </div>
             </div>
 
-            {/* BOTTOM FLOATING EDITORIAL TOOLBAR (Matching Reference Image 2: T, 🖼️, ✏️, B, A) */}
+            {/* BOTTOM FLOATING EDITORIAL TOOLBAR (Merged Image 1 + Image 2: + 🎙 | T 🖼️ ✎ B A | ···) */}
             <footer className="pt-2 pb-2 shrink-0 z-30 relative">
               <div className="w-full flex items-center justify-center relative">
                 {/* Floating Docked Pill Toolbar */}
-                <div className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full bg-white/95 dark:bg-[#1c1c22]/95 backdrop-blur-lg border border-neutral-200/90 dark:border-white/10 shadow-xl shadow-black/8 dark:shadow-black/50">
-                  {/* 1. T - Typography / Heading Toggle */}
+                <div className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full backdrop-blur-xl border shadow-2xl select-none transition-colors ${
+                  isDark
+                    ? 'bg-[#18181c]/90 text-white border-white/10 shadow-black/60'
+                    : 'bg-neutral-900/95 text-white border-neutral-800 shadow-neutral-900/25'
+                }`}>
+                  {/* 1. Quick Add (+) with Popover (Attach Photo, Voice Memo, Prompts, Timestamp) */}
+                  <div className="relative" ref={quickAddRef}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setIsQuickAddOpen((prev) => !prev);
+                      }}
+                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                        isQuickAddOpen
+                          ? 'bg-white text-neutral-950 scale-105 shadow-sm'
+                          : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
+                      }`}
+                      title="Quick insert (+)"
+                    >
+                      <Plus className="w-4 h-4 stroke-[2.4]" />
+                    </button>
+
+                    {/* Quick Add Popover Menu */}
+                    <AnimatePresence>
+                      {isQuickAddOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                          className={`absolute bottom-full mb-3 left-0 w-52 p-1.5 rounded-2xl border shadow-2xl z-50 ${
+                            isDark
+                              ? 'bg-[#1a1a1f] border-neutral-800 text-white shadow-black/80'
+                              : 'bg-white border-neutral-200 text-neutral-900 shadow-xl'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsQuickAddOpen(false);
+                              fileInputRef.current?.click();
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
+                              isDark ? 'hover:bg-neutral-800 text-neutral-200' : 'hover:bg-neutral-100 text-neutral-800'
+                            }`}
+                          >
+                            <ImageIcon className="w-4 h-4 text-purple-400 stroke-[2]" />
+                            <span>Attach Photo</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsQuickAddOpen(false);
+                              handleToggleRecord();
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
+                              isDark ? 'hover:bg-neutral-800 text-neutral-200' : 'hover:bg-neutral-100 text-neutral-800'
+                            }`}
+                          >
+                            <Mic className="w-4 h-4 text-rose-400 stroke-[2]" />
+                            <span>{isRecording ? 'Stop Recording' : 'Record Voice Memo'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsQuickAddOpen(false);
+                              setIsPromptsOpen(true);
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
+                              isDark ? 'hover:bg-neutral-800 text-neutral-200' : 'hover:bg-neutral-100 text-neutral-800'
+                            }`}
+                          >
+                            <Sparkles className="w-4 h-4 text-amber-400 stroke-[2]" />
+                            <span>Writing Prompts</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleInsertTimestamp}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
+                              isDark ? 'hover:bg-neutral-800 text-neutral-200' : 'hover:bg-neutral-100 text-neutral-800'
+                            }`}
+                          >
+                            <Clock className="w-4 h-4 text-sky-400 stroke-[2]" />
+                            <span>Insert Timestamp</span>
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* 2. Direct Voice Note Button (Mic) */}
+                  <button
+                    type="button"
+                    onClick={handleToggleRecord}
+                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                      isRecording
+                        ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/40'
+                        : voiceNotes.length > 0
+                        ? 'text-rose-400 hover:bg-rose-500/15'
+                        : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
+                    }`}
+                    title={isRecording ? 'Stop recording voice note' : 'Record voice memo'}
+                  >
+                    <Mic className="w-4 h-4 stroke-[2]" />
+                  </button>
+
+                  {/* Divider */}
+                  <div className="w-px h-4 bg-white/20 mx-0.5" />
+
+                  {/* 3. T - Typography / Heading Toggle */}
                   <button
                     type="button"
                     onMouseDown={(e) => {
@@ -2265,35 +2684,29 @@ export function DiaryDrawer({
                     }}
                     className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all cursor-pointer ${
                       activeFormats.heading
-                        ? isDark
-                          ? 'bg-neutral-700 text-white ring-1 ring-neutral-600'
-                          : 'bg-neutral-200 text-neutral-900 ring-1 ring-neutral-300'
-                        : isDark
-                        ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                        : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                        ? 'bg-white/25 text-white ring-1 ring-white/40'
+                        : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
                     }`}
-                    title="Title / Subheading (T)"
+                    title="Heading (T)"
                   >
                     <span className="font-bold text-sm leading-none">T</span>
                   </button>
 
-                  {/* 2. Photo / Image Upload */}
+                  {/* 4. Photo / Image Upload (Direct) */}
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                       images.length > 0
-                        ? 'text-purple-500 hover:bg-purple-500/10'
-                        : isDark
-                        ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                        : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                        ? 'text-purple-400 bg-purple-500/20'
+                        : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
                     }`}
-                    title="Add photo (with rounded corners)"
+                    title="Add photo"
                   >
                     <ImageIcon className="w-4 h-4 stroke-[2]" />
                   </button>
 
-                  {/* 3. Highlighter - Soft Warm Yellow Marker */}
+                  {/* 5. Highlighter with Warm Amber Accent Tip (like Image 1) */}
                   <button
                     type="button"
                     onMouseDown={(e) => {
@@ -2302,17 +2715,15 @@ export function DiaryDrawer({
                     }}
                     className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                       activeFormats.highlight
-                        ? 'bg-amber-300 text-amber-950 ring-2 ring-amber-400/50 shadow-xs'
-                        : isDark
-                        ? 'text-amber-400 hover:bg-amber-400/15'
-                        : 'text-amber-600 hover:bg-amber-100/70'
+                        ? 'bg-amber-400 text-amber-950 font-semibold shadow-xs'
+                        : 'text-amber-400 hover:bg-amber-400/20 active:scale-90'
                     }`}
                     title="Highlight text"
                   >
-                    <Highlighter className="w-4 h-4 stroke-[2.2]" />
+                    <Highlighter className="w-4 h-4 stroke-[2.4]" />
                   </button>
 
-                  {/* 4. B - Bold Toggle */}
+                  {/* 6. B - Bold Toggle */}
                   <button
                     type="button"
                     onMouseDown={(e) => {
@@ -2321,38 +2732,30 @@ export function DiaryDrawer({
                     }}
                     className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center font-bold text-sm transition-all cursor-pointer ${
                       activeFormats.bold
-                        ? isDark
-                          ? 'bg-neutral-700 text-white ring-1 ring-neutral-600'
-                          : 'bg-neutral-200 text-neutral-900 ring-1 ring-neutral-300'
-                        : isDark
-                        ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                        : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                        ? 'bg-white/25 text-white ring-1 ring-white/40'
+                        : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
                     }`}
-                    title="Bold (**text**)"
+                    title="Bold"
                   >
-                    <Bold className="w-4 h-4 stroke-[2.5]" />
+                    <Bold className="w-4 h-4 stroke-[2.6]" />
                   </button>
 
-                  {/* 5. A - Color Selector Popover */}
+                  {/* 7. A - Text Color with underline indicator */}
                   <div className="relative" ref={colorPickerRef}>
                     <button
                       type="button"
                       onClick={() => setIsColorPickerOpen((prev) => !prev)}
                       className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex flex-col items-center justify-center transition-all cursor-pointer ${
                         isColorPickerOpen
-                          ? isDark
-                            ? 'bg-neutral-700 text-white'
-                            : 'bg-neutral-200 text-neutral-900'
-                          : isDark
-                          ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                          : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                          ? 'bg-white/25 text-white ring-1 ring-white/40'
+                          : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
                       }`}
                       title="Text color (A)"
                     >
-                      <span className="font-extrabold text-sm leading-none">A</span>
+                      <span className="font-extrabold text-xs leading-none">A</span>
                       <span
                         className="w-3.5 h-0.5 rounded-full mt-0.5"
-                        style={{ backgroundColor: selectedTextColor || '#3b82f6' }}
+                        style={{ backgroundColor: selectedTextColor || '#38bdf8' }}
                       />
                     </button>
 
@@ -2395,21 +2798,17 @@ export function DiaryDrawer({
                   </div>
 
                   {/* Divider */}
-                  <div className={`w-px h-5 mx-0.5 ${isDark ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                  <div className="w-px h-4 bg-white/20 mx-0.5" />
 
-                  {/* More Formatting Tools (Italic, List, Quote, Voice Memo) */}
+                  {/* 8. More Formatting Tools (...) */}
                   <div className="relative" ref={moreFormattingRef}>
                     <button
                       type="button"
                       onClick={() => setIsMoreFormattingOpen((prev) => !prev)}
                       className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                         isMoreFormattingOpen
-                          ? isDark
-                            ? 'bg-neutral-700 text-white'
-                            : 'bg-neutral-200 text-neutral-900'
-                          : isDark
-                          ? 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                          : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                          ? 'bg-white/25 text-white ring-1 ring-white/40'
+                          : 'text-neutral-300 hover:text-white hover:bg-white/10 active:scale-90'
                       }`}
                       title="More formatting tools"
                     >
@@ -2479,26 +2878,10 @@ export function DiaryDrawer({
                           >
                             <Quote className="w-4 h-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleToggleRecord();
-                              setIsMoreFormattingOpen(false);
-                            }}
-                            className="p-2 rounded-xl text-purple-400 hover:bg-purple-500/15 transition-colors cursor-pointer"
-                            title="Record Voice Note"
-                          >
-                            <Mic className="w-4 h-4" />
-                          </button>
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </div>
-                </div>
-
-                {/* Word Count (Minimalist, placed at bottom right matching Image 2) */}
-                <div className="absolute right-3 sm:right-5 text-xs font-medium text-neutral-400 select-none">
-                  {wordCount > 0 ? `${wordCount} ${wordCount === 1 ? 'word' : 'words'}` : ''}
                 </div>
               </div>
             </footer>

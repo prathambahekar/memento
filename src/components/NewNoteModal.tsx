@@ -88,6 +88,7 @@ interface NewNoteModalProps {
     }
   ) => void;
   onUpdateNote?: (updatedNote: NoteItem) => void;
+  onOpenDiaryDraft?: (draft: { title: string; content: string; images?: string[] }) => void;
 }
 
 const SAFE_SUGGESTED_TYPES = [
@@ -383,6 +384,7 @@ export function NewNoteModal({
   onClose,
   onSaveNote,
   onUpdateNote,
+  onOpenDiaryDraft,
 }: NewNoteModalProps) {
   const isDark = theme === 'dark';
 
@@ -609,6 +611,11 @@ export function NewNoteModal({
   // Reset or initialize when opened
   useEffect(() => {
     if (isOpen) {
+      if (initialType === 'diary' && onOpenDiaryDraft && !editingNote) {
+        onOpenDiaryDraft({ title: '', content: '', images: [] });
+        onClose();
+        return;
+      }
       if (editingNote) {
         const determinedType: EntryType =
           editingNote.entryType ||
@@ -1863,6 +1870,17 @@ export function NewNoteModal({
                             id={`select-type-${typeKey}`}
                             type="button"
                             onClick={() => {
+                              if (typeKey === 'diary' && onOpenDiaryDraft) {
+                                setIsTypeDropdownOpen(false);
+                                triggerHaptic('selection');
+                                onOpenDiaryDraft({
+                                  title,
+                                  content,
+                                  images: attachedImages,
+                                });
+                                onClose();
+                                return;
+                              }
                               setEntryType(typeKey);
                               setIsTypeDropdownOpen(false);
                               triggerHaptic('selection');
